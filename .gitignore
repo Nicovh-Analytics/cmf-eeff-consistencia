@@ -3,6 +3,5 @@ __pycache__/
 *.part
 snippet.py
 verificacion/
-muestra_03b.py
-evaluar_muestra.py
+*.xlsx
 

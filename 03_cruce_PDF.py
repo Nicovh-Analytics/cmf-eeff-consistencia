@@ -37,13 +37,14 @@ import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+from config import CMF_HOME
 
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent
-DIR_ARCHIVOS = BASE_DIR / "data" / "archivos"
-DIR_PROC = BASE_DIR / "data" / "procesado"
-DIR_TEXTO = BASE_DIR / "data" / "texto_pdf"
+DIR_ARCHIVOS = CMF_HOME / "archivos"
+DIR_PROC = CMF_HOME / "procesado"
+DIR_TEXTO = CMF_HOME / "texto_pdf"
 
 # --- Etapa 1 ---
 MAX_PAGINAS = 25          # los estados estan al inicio; las notas no se cachean

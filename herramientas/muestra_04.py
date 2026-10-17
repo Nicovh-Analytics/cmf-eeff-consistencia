@@ -23,6 +23,8 @@ Escribe:  verificacion/muestra_verificacion.xlsx   (fuera del repo: .gitignore)
 
 import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import CMF_HOME
 
 import pandas as pd
 from openpyxl import Workbook
@@ -30,8 +32,8 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 
 BASE_DIR = Path(__file__).resolve().parent.parent   # raiz del repo (este script vive en herramientas/)
-DIR_PROC = BASE_DIR / "data" / "procesado"
-DIR_ARCHIVOS = BASE_DIR / "data" / "archivos"
+DIR_PROC = CMF_HOME / "procesado"
+DIR_ARCHIVOS = CMF_HOME / "archivos"
 SALIDA = BASE_DIR / "verificacion" / "muestra_verificacion.xlsx"
 
 N_TOP = 5
@@ -186,7 +188,7 @@ def main():
 
     m = armar_muestra(cand)
     m = m.merge(res[["rut", "anio", "paginas_estados"]], on=["rut", "anio"], how="left")
-    m["ruta_pdf"] = [str(Path("data/archivos") / r / str(a) / p)
+    m["ruta_pdf"] = [str(CMF_HOME / "archivos" / r / str(a) / p)
                      for r, a, p in zip(m["rut"], m["anio"], m["pdf"])]
     m = contexto_de_cada_caso(m, det, hue)
     m.insert(0, "id", range(1, len(m) + 1))

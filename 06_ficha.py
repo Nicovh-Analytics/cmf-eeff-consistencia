@@ -38,9 +38,10 @@ from pathlib import Path
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+from config import CMF_HOME
 
 BASE_DIR = Path(__file__).resolve().parent
-DIR_PROC = BASE_DIR / "data" / "procesado"
+DIR_PROC = CMF_HOME / "procesado"
 DIR_FICHAS = BASE_DIR / "verificacion" / "fichas"
 MUESTRA = BASE_DIR / "verificacion" / "muestra_verificacion.xlsx"
 
@@ -340,7 +341,7 @@ def generar(datos: Datos, rut: str, anio: int):
         ("AGF", enc["nombre_agf"]), ("Auditor", enc.get("auditor_firma")),
         ("Moneda", enc["moneda"]), ("XML", enc["archivo"]),
         ("XML original (t-1)", prev["archivo"].iloc[0] if len(prev) else "(no disponible)"),
-        ("PDF", str(Path("data/archivos") / rut / str(anio) / pdf) if pdf else ""),
+        ("PDF", str(CMF_HOME / "archivos" / rut / str(anio) / pdf) if pdf else ""),
         ("Paginas de estados en el PDF", res["paginas_estados"].iloc[0] if len(res) else ""),
         ("% encontrado (tolerante)", res["pct_tolerante"].iloc[0] if len(res) else ""),
         ("", ""),

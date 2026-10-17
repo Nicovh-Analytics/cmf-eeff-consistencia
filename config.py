@@ -5,6 +5,11 @@ Parametros compartidos del pipeline
 Una sola definicion para todos los scripts que la necesitan (03b, 04).
 """
 
+import os
+from pathlib import Path
+
+
+CMF_HOME = Path(os.environ.get("CMF_HOME", r"D:\data\cmf-eeff"))
 # Materialidad: diferencias iguales o menores al umbral se registran como
 # observacion y no se revisan a mano. Se aplica sobre la diferencia absoluta,
 # en la unidad en que reporta el fondo:

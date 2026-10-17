@@ -47,13 +47,14 @@ reporta con nombre sin verificacion manual del PDF.
 
 import sys
 from pathlib import Path
+from config import CMF_HOME
 
 import pandas as pd
 
 from config import umbral_materialidad
 
 BASE_DIR = Path(__file__).resolve().parent
-DIR_PROC = BASE_DIR / "data" / "procesado"
+DIR_PROC = CMF_HOME / "procesado"
 
 # Un fondo es candidato si los huerfanos son al menos esta fraccion de las
 # cifras no encontradas (en un par perfecto, 1 a 1).

@@ -8,19 +8,21 @@ import json
 import re
 import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config import CMF_HOME
 
 import pandas as pd
 import pdfplumber
 
-res = pd.read_csv("data/procesado/cruce_resumen.csv", dtype={"rut": str})
+res = pd.read_csv(CMF_HOME / "procesado" / "cruce_resumen.csv", dtype={"rut": str})
 RE_EFE = re.compile(r"flujos?\s+de\s+efectivo", re.I)
 RE_NUM = re.compile(r"[\d()\-.]")
 
 
 def pagina_efe(rut, anio):
     r = res[(res.rut == rut) & (res.anio == anio)].iloc[0]
-    pdf = Path("data/archivos") / rut / str(anio) / r["pdf"]
-    datos = json.load(open(Path("data/texto_pdf") / rut / str(anio) / (Path(r["pdf"]).stem + ".json"), encoding="utf-8"))
+    pdf = Path(CMF_HOME / "archivos") / rut / str(anio) / r["pdf"]
+    datos = json.load(open(Path(CMF_HOME / "texto_pdf") / rut / str(anio) / (Path(r["pdf"]).stem + ".json"), encoding="utf-8"))
     pags = [int(p) for p in str(r["paginas_estados"]).split(",") if p.strip().isdigit()]
     # la pagina de estados con el titulo del EFE y mas montos
     cand = [p for p in pags if RE_EFE.search(datos["paginas"][p - 1])]

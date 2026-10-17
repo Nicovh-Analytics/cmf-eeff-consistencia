@@ -51,13 +51,14 @@ reclasificacion revelada (NIC 1.41). Lo que se marca es donde mirar.
 import importlib.util
 import sys
 from pathlib import Path
+from config import CMF_HOME
 
 import pandas as pd
 
 from config import casos_conocidos
 
 BASE_DIR = Path(__file__).resolve().parent
-DIR_PROC = BASE_DIR / "data" / "procesado"
+DIR_PROC = CMF_HOME / "procesado"
 
 MAX_DIF_MENOR = 5      # en unidades del reporte (miles)
 TOL_SERIE = 1          # tolerancia para emparejar series por cierre

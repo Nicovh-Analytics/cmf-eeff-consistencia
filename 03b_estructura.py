@@ -33,11 +33,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from config import casos_conocidos, umbral_materialidad
+from config import casos_conocidos, umbral_materialidad, CMF_HOME
 from lector_espacial import cargar_coords, filas_espaciales
 
 BASE_DIR = Path(__file__).resolve().parent
-DIR_PROC = BASE_DIR / "data" / "procesado"
+DIR_PROC = CMF_HOME / "procesado"
 
 TOL = 2                     # diferencia tolerada al sumar lineas (redondeo)
 

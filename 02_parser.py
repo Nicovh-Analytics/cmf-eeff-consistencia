@@ -33,12 +33,13 @@ import unicodedata
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
+from config import CMF_HOME
 
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent
-DIR_ARCHIVOS = BASE_DIR / "data" / "archivos"
-DIR_SALIDA = BASE_DIR / "data" / "procesado"
+DIR_ARCHIVOS = CMF_HOME / "archivos"
+DIR_SALIDA = CMF_HOME / "procesado"
 
 # Normalizacion de auditores: el NOMBRE es mas confiable que el numero de
 # registro (verificado en la corrida completa: la misma firma aparece con

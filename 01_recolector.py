@@ -38,6 +38,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+from config import CMF_HOME
 
 # ---------------------------------------------------------------------------
 # CONFIGURACION
@@ -78,7 +79,7 @@ STATUS_RETRY = {429, 500, 502, 503, 504}
 MAX_FALLOS_SEGUIDOS = 3
 
 # --- Rutas (ancladas al script, no al directorio de trabajo) ---
-DIR_DATA = Path(__file__).resolve().parent / "data"
+DIR_DATA = CMF_HOME
 DIR_HTML = DIR_DATA / "html"
 DIR_ARCHIVOS = DIR_DATA / "archivos"
 MANIFIESTO = DIR_DATA / "manifiesto.csv"
@@ -367,5 +368,5 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 
-m = pd.read_csv("data/manifiesto.csv", dtype={"rut": str}).drop_duplicates("archivo")
+m = pd.read_csv(DIR_DATA/"manifiesto.csv", dtype={"rut": str}).drop_duplicates("archivo")
 print(m.groupby(["rut", "anio", "tipo"]).size().unstack(fill_value=0).to_string())

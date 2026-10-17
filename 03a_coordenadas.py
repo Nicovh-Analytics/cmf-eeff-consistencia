@@ -27,13 +27,14 @@ import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+from config import CMF_HOME
 
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent
-DIR_ARCHIVOS = BASE_DIR / "data" / "archivos"
-DIR_PROC = BASE_DIR / "data" / "procesado"
-DIR_COORDS = BASE_DIR / "data" / "coords_pdf"
+DIR_ARCHIVOS = CMF_HOME / "archivos"
+DIR_PROC = CMF_HOME / "procesado"
+DIR_COORDS = CMF_HOME / "coords_pdf"
 N_PROCESOS = max(1, (os.cpu_count() or 2) - 2)
 VERSION = 1
 
