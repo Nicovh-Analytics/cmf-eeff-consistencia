@@ -19,22 +19,22 @@ RAIZ = Path(__file__).resolve().parent
 
 # (id, script, descripcion, automatica)
 ETAPAS = [
-    ("01",  "01_recolector.py",     "descarga XML/PDF desde CMF (red, lento)",  False),
-    ("02",  "02_parser.py",         "XML -> tablas en procesado/",              True),
-    ("03",  "03_cruce_PDF.py",      "cruce XML vs PDF (texto)",                 True),
-    ("03a", "03a_coordenadas.py",   "coordenadas del PDF",                      True),
-    ("03b", "03b_estructura.py",    "subtotales e identidades",                 True),
-    ("04",  "04_candidatos.py",     "consolida candidatos",                     True),
-    ("07",  "07_continuidad.py",    "continuidad entre periodos",               True),
-    ("06",  "06_ficha.py",          "fichas de verificacion (requiere muestra)", False),
+    ("01",  "01_recolector.py",     "descarga XML/PDF desde CMF (red, lento)",  False, []),
+    ("02",  "02_parser.py",         "XML -> tablas en procesado/",              True, []),
+    ("03",  "03_cruce_PDF.py",      "cruce XML vs PDF (texto)",                 True, []),
+    ("03a", "03a_coordenadas.py",   "coordenadas del PDF",                      True, []),
+    ("03b", "03b_estructura.py",    "subtotales e identidades",                 True, []),
+    ("07",  "07_continuidad.py",    "continuidad entre periodos",               True, []),
+    ("04",  "04_candidatos.py",     "consolida candidatos",                     True, []),
+    ("06", "06_ficha.py", "fichas de verificacion (requiere muestra)", False, ["--muestra"]),
 ]
 IDS = [e[0] for e in ETAPAS]
 
 
-def correr(script: str) -> int:
+def correr(script: str, args=()) -> int:
     t0 = time.time()
     print(f"\n=== {script} ===", flush=True)
-    rc = subprocess.run([sys.executable, script], cwd=RAIZ).returncode
+    rc = subprocess.run([sys.executable, script, *args], cwd=RAIZ).returncode
     print(f"--- {script}: {'OK' if rc == 0 else f'ERROR ({rc})'} en {time.time() - t0:.0f}s", flush=True)
     return rc
 
@@ -47,7 +47,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.lista:
-        for i, s, d, auto in ETAPAS:
+        for i, s, d, auto, _ in ETAPAS:
             print(f"{i:>4}  {s:<22} {d}{'' if auto else '   [manual]'}")
         return 0
 
@@ -63,8 +63,8 @@ def main() -> int:
         return 1
     print(f"datos: {CMF_HOME}")
 
-    for _, script, _, _ in sel:
-        if correr(script) != 0:
+    for _, script, _, _, args in sel:
+        if correr(script, args) != 0:
             print("pipeline detenido")
             return 1
     return 0
