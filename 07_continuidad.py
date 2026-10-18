@@ -52,6 +52,7 @@ import importlib.util
 import sys
 from pathlib import Path
 from config import CMF_HOME
+from comun.secciones import asignar_secciones
 
 import pandas as pd
 
@@ -244,18 +245,6 @@ def identidades_por_anio(idt, enc):
     return t.astype(int)
 
 
-def cargar_asignador():
-    """Reutiliza la asignacion de estado por orden de 06_ficha.py
-    (anclas exclusivas por estado). Si no esta, todo queda como '?'."""
-    ruta = BASE_DIR / "06_ficha.py"
-    if not ruta.exists():
-        return lambda codigos: ["?"] * len(codigos)
-    spec = importlib.util.spec_from_file_location("ficha", ruta)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.asignar_secciones
-
-
 def leer():
     enc = pd.read_csv(DIR_PROC / "encabezados.csv",
                       dtype={"rut": str, "rut_agf": str})
@@ -269,7 +258,7 @@ def leer():
               & cta["archivo"].isin(enc["archivo"])]
 
     # Estado financiero por orden de aparicion dentro de cada archivo-contexto.
-    asignar = cargar_asignador()
+    asignar = asignar_secciones
     cta["estado"] = cta.groupby(["archivo", "contexto"], sort=False)["codigo"] \
                        .transform(lambda s: asignar(list(s)))
 
