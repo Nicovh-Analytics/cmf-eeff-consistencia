@@ -259,7 +259,7 @@ def subtipo_probable(tipo, delta, falt_vals, falt_cods, huer, huer_pag, n_saldo,
 
 def validar_contra_muestra(cand: pd.DataFrame) -> None:
     """Si existe la planilla de verificacion, cruza subtipo manual vs probable."""
-    ruta = RAIZ
+    ruta = RAIZ / "verificacion" / "muestra_verificacion.xlsx"
     if not ruta.exists():
         return
     try:

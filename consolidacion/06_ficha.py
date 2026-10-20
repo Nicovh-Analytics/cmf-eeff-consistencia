@@ -351,7 +351,7 @@ def main():
     for rut, anio in claves:
         ruta = generar(datos, rut, anio)
         if ruta:
-            print(f"  {rut} {anio} -> {ruta.relative_to(BASE_DIR)}")
+            print(f"  {rut} {anio} -> {ruta.relative_to(RAIZ)}")
     return 0
 
 
