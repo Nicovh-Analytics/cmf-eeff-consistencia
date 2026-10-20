@@ -39,12 +39,11 @@ from comun.secciones import asignar_secciones
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from config import CMF_HOME
+from config import CMF_HOME, RAIZ
 
-BASE_DIR = Path(__file__).resolve().parent
 DIR_PROC = CMF_HOME / "procesado"
-DIR_FICHAS = BASE_DIR / "verificacion" / "fichas"
-MUESTRA = BASE_DIR / "verificacion" / "muestra_verificacion.xlsx"
+DIR_FICHAS = RAIZ / "verificacion" / "fichas"
+MUESTRA = RAIZ / "verificacion" / "muestra_verificacion.xlsx"
 
 FUENTE = Font(name="Arial", size=10)
 FUENTE_B = Font(name="Arial", size=10, bold=True)

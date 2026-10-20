@@ -11,6 +11,7 @@ import argparse
 import subprocess
 import sys
 import time
+import os
 from pathlib import Path
 
 from config import CMF_HOME
@@ -19,14 +20,14 @@ RAIZ = Path(__file__).resolve().parent
 
 # (id, script, descripcion, automatica)
 ETAPAS = [
-    ("01",  "01_recolector.py",     "descarga XML/PDF desde CMF (red, lento)",  False, []),
-    ("02",  "02_parser.py",         "XML -> tablas en procesado/",              True, []),
-    ("03",  "03_cruce_PDF.py",      "cruce XML vs PDF (texto)",                 True, []),
-    ("03a", "03a_coordenadas.py",   "coordenadas del PDF",                      True, []),
-    ("03b", "03b_estructura.py",    "subtotales e identidades",                 True, []),
-    ("07",  "07_continuidad.py",    "continuidad entre periodos",               True, []),
-    ("04",  "04_candidatos.py",     "consolida candidatos",                     True, []),
-    ("06", "06_ficha.py", "fichas de verificacion (requiere muestra)", False, ["--muestra"]),
+("01",  "extraccion/01_recolector.py",             "descarga XML/PDF desde CMF (red, lento)", False, []),
+("02",  "extraccion/02_parser.py",                 "XML -> tablas en procesado/",             True,  []),
+("07",  "validaciones/continuidad/07_continuidad.py", "continuidad entre periodos",           True,  []),
+("03",  "validaciones/fidelidad/03_cruce_PDF.py",  "cruce XML vs PDF (texto)",                True,  []),
+("03a", "validaciones/fidelidad/03a_coordenadas.py", "coordenadas del PDF",                  True,  []),
+("03b", "validaciones/estructura/03b_estructura.py", "subtotales e identidades",            True,  []),
+("04",  "consolidacion/04_candidatos.py",          "consolida candidatos",                    True,  []),
+("06",  "consolidacion/06_ficha.py",               "fichas de verificacion (requiere muestra)", False, ["--muestra"]),
 ]
 IDS = [e[0] for e in ETAPAS]
 
@@ -34,7 +35,8 @@ IDS = [e[0] for e in ETAPAS]
 def correr(script: str, args=()) -> int:
     t0 = time.time()
     print(f"\n=== {script} ===", flush=True)
-    rc = subprocess.run([sys.executable, script, *args], cwd=RAIZ).returncode
+    env = {**os.environ, "PYTHONPATH": str(RAIZ)}
+    rc = subprocess.run([sys.executable, script, *args], cwd=RAIZ, env=env).returncode
     print(f"--- {script}: {'OK' if rc == 0 else f'ERROR ({rc})'} en {time.time() - t0:.0f}s", flush=True)
     return rc
 

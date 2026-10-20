@@ -8,6 +8,7 @@ Una sola definicion para todos los scripts que la necesitan (03b, 04).
 import os
 from pathlib import Path
 
+RAIZ = Path(__file__).resolve().parent      # raiz del repo (config.py vive ahi)
 
 CMF_HOME = Path(os.environ.get("CMF_HOME", r"D:\data\cmf-eeff"))
 # Materialidad: diferencias iguales o menores al umbral se registran como

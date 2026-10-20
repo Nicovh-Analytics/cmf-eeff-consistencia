@@ -47,13 +47,12 @@ reporta con nombre sin verificacion manual del PDF.
 
 import sys
 from pathlib import Path
-from config import CMF_HOME
+from config import CMF_HOME, RAIZ
 
 import pandas as pd
 
 from config import umbral_materialidad
 
-BASE_DIR = Path(__file__).resolve().parent
 DIR_PROC = CMF_HOME / "procesado"
 
 # Un fondo es candidato si los huerfanos son al menos esta fraccion de las
@@ -260,7 +259,7 @@ def subtipo_probable(tipo, delta, falt_vals, falt_cods, huer, huer_pag, n_saldo,
 
 def validar_contra_muestra(cand: pd.DataFrame) -> None:
     """Si existe la planilla de verificacion, cruza subtipo manual vs probable."""
-    ruta = BASE_DIR / "verificacion" / "muestra_verificacion.xlsx"
+    ruta = RAIZ
     if not ruta.exists():
         return
     try:
