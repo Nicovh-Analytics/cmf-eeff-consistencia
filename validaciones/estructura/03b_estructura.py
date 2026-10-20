@@ -210,8 +210,18 @@ def analizar_fondo(paginas, xml, coords):
             continue
         i = ubicar_subtotal(planas, cfg["glosa"], x_act, x_ant)
         glosa_ok = i is not None
+        metodo = "glosa_y_valor" if i is not None else None
         if i is None:
             i = ubicar_por_valor(planas, x_act, x_ant, excluir=usados)
+            if i is not None:
+                metodo = "valor"
+        if i is None:
+            # Respaldo 2: la glosa calza en UNA sola linea con montos, aunque el valor
+            # difiera del XML (subtotal mal impreso en el PDF: no debe quedar fuera).
+            cand = [k for k, (_, a, _, l) in enumerate(planas)
+                    if a is not None and k not in usados and cfg["glosa"].search(norm(l))]
+            if len(cand) == 1:
+                i, glosa_ok, metodo = cand[0], True, "solo_glosa"
         if i is None:
             filas.append(dict(subtotal=nombre, ubicado=False))
             continue
@@ -251,7 +261,7 @@ def analizar_fondo(paginas, xml, coords):
             filas.append(dict(
                 subtotal=nombre, ubicado=True, columna=col, pagina=lineas[i][4],
                 glosa_esperada=glosa_ok,   # False: ubicado por valor, rotulo distinto
-                formato_irregular=" ".join(irregulares),
+                formato_irregular=" ".join(irregulares), metodo = metodo,
                 subtotal_pdf=s_pdf, subtotal_xml=x_tot, suma_lineas_pdf=suma,
                 pdf_suma=abs(suma - s_pdf) <= TOL,
                 pdf_suma_signo_xml=abs(suma_sx - s_sx) <= TOL,

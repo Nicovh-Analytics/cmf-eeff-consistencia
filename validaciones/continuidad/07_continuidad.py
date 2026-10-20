@@ -435,6 +435,22 @@ def resumir(m, pares, renombradas, b, enc, fallas_internas=None):
             "quiebres_arrastre", "renombres_arrastre", "series_renombradas", "descuadre_interno"]
     return res[cols].sort_values(["clase", "max_abs_dif"], ascending=[True, False])
 
+UMBRAL_REPITE = 0.75   # observado: 4.026/4.080 repiten < 10%; los casos reales, >= 76%
+
+def xml_repite_anterior(cuentas):
+    """Fondo-anio cuyo XML trae en la columna actual las mismas cifras que el XML del
+    anio anterior (cuentas distintas de cero, por codigo y serie)."""
+    c = cuentas[(cuentas.contexto == "PeriodoActual") & (cuentas.valor.fillna(0) != 0)].copy()
+    c["serie"] = c["serie"].fillna("")
+    v = c.drop_duplicates(["rut", "anio", "codigo", "serie"]).set_index(["rut", "anio", "codigo", "serie"]).valor
+    t1 = v.copy()
+    t1.index = pd.MultiIndex.from_arrays([t1.index.get_level_values(0), t1.index.get_level_values(1) + 1,
+                                          t1.index.get_level_values(2), t1.index.get_level_values(3)])
+    j = pd.concat([v.rename("t"), t1.rename("t1")], axis=1, join="inner")
+    r = (j.t == j.t1).groupby(level=[0, 1]).agg(n_iguales="sum", n_cuentas="size").reset_index()
+    r["pct_iguales"] = r.n_iguales / r.n_cuentas
+    return r[(r.n_cuentas >= 10) & (r.pct_iguales >= UMBRAL_REPITE)]
+
 
 def main():
     enc, cta = leer()
@@ -503,6 +519,14 @@ def main():
               .unstack("anio", fill_value=0).to_string(), "\n")
         print("fallas grandes por anio de reporte (act = columna actual, ant = comparativo):")
         print(identidades_por_anio(idt, enc).to_string(), "\n")
+
+    cuentas_t = pd.read_csv(DIR_PROC / "cuentas.csv", dtype={"rut": str, "serie": str},
+                            usecols=["rut", "anio", "contexto", "codigo", "serie", "valor"])
+    rep = xml_repite_anterior(cuentas_t)
+    rep.to_csv(DIR_PROC / "xml_repite_anterior.csv", index=False)
+    print(f"\nXML que repiten las cifras del anio anterior (>= {UMBRAL_REPITE:.0%} de cuentas iguales): {len(rep)}")
+    if len(rep):
+        print(rep.to_string(index=False))
 
     print("validacion con casos conocidos:")
     idx = res.set_index(["rut", "anio"])

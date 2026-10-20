@@ -41,9 +41,9 @@ Cada regla del pipeline existe por un caso concreto. El registro está en [`docs
 | | |
 |---|---|
 | fondo-año analizados | 4.212 |
-| subtotales ubicados en el PDF (operación / financiamiento) | 98,7% / 98,7% |
-| subtotal-columna que no suman | 116 (0,7%) |
-| clasificados como probable error del PDF, sobre el umbral de materialidad | 37 |
+| subtotales ubicados en el PDF (operación / financiamiento) | 99,0% / 98,9% |
+| subtotal-columna que no suman | 125 (0,8%) |
+| clasificados como probable error del PDF, sobre el umbral de materialidad | 39 |
 | **revisados manualmente: confirmados como error real** | **9 de 9** (IC 95% ≈ 70–100%) |
 
 Los que no suman se clasifican automáticamente:
@@ -90,6 +90,7 @@ Para cada par de años consecutivos, el comparativo que presenta el año *t* se 
 | incompleto / subtotal vacío | 48 |
 
 Además, 204 fondo-año tienen al menos una identidad contable rota **dentro del mismo XML** (por ejemplo, una suma de líneas que no da el total).
+Además, **3 XML repiten íntegramente las cifras del año anterior**, con el período nuevo declarado: el 100% de sus cuentas es idéntico al XML previo (más 1 caso parcial, con 80%). En el resto del universo, ningún fondo-año supera el 25% de cuentas iguales. El cruce espejo no los detectaba, porque las cifras están en el PDF, pero en la columna del comparativo.
 
 **Alcance de las validaciones de la CMF.** La CMF cuenta con validaciones físicas y lógicas sobre el XML, cuyo alcance está pendiente de confirmación por parte del regulador. Mientras tanto, los datos dan pistas: hay identidades contables que fallan solo en la columna comparativa y nunca en la actual (por ejemplo, las sumas del estado de situación comparativo no muestran fallas en 2011–2016 y sí desde 2017). Eso sugiere qué se valida y qué no, pero es una hipótesis hasta tener la respuesta oficial.
 
@@ -106,6 +107,7 @@ Cada etapa que marca casos se contrastó con revisión manual del PDF original:
 ## Hallazgos de método
 
 **1. El cruce por números tiene un punto ciego.** Buscar cada cifra del XML en el PDF no detecta un error si el valor equivocado coincide con otra cifra del documento, porque no queda ningún monto huérfano. Por eso el 03b no busca cifras: **reconstruye cada estado y verifica que sume**.
+Una variante del mismo punto ciego: si el XML trae las cifras corridas de columna, cada una "aparece" en el PDF y el fondo pasa como espejo perfecto.
 
 **2. Leer el PDF por posición, no por texto.** La primera versión del 03b leía el texto extraído y acumuló reglas por cada plantilla de AGF: números de nota, montos partidos por la extracción, negrita simulada, glosas en dos líneas. Además usaba el XML para decidir cómo leer el PDF, y **auditar un documento usando como árbitro al documento auditado sesga el resultado**. La versión final usa la geometría de la página:
 
