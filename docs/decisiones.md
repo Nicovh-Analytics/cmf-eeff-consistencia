@@ -246,6 +246,26 @@ Caso F16 (AGF Y), resultado 2018 = ganancia de 3.888.604: el PDF 2018 la present
 
 Enlace de notas (FMNO) roto en 15 fondo-año: el PDF devuelve "ACCION NO PERMITIDA 16" por la ruta de notas. 13 se recuperaron desde la sección de estados financieros anuales del mismo sitio. 2 no están disponibles por ninguna vía: F19 (2020, la sección anual parte en 2021) y F20 (2021, el enlace alternativo tampoco funciona). Se excluyen como pdf_no_disponible.
 
+### H9. XML con las cifras del año anterior, publicado como XML del año
+
+- Condición: en F21, F22 y F23 (AGF Y, reporte 2019), la columna actual del XML 2019 trae
+  exactamente las cifras del XML 2018: 100% de las cuentas distintas de cero, con y sin serie
+  (83, 81 y 65 cuentas). El PDF 2019 del mismo envío presenta cifras propias de 2019, con 2018
+  como comparativo.
+- Mecanismo: el XML declara el período 2019 en <Contextos> (01-01-2019 a 31-12-2019) y el
+  comparativo 2018, pero las cifras de ambas columnas son las del XML 2018: se actualizó la fecha,
+  no los datos. En F23 (fondo iniciado en 2018) el comparativo 2018 declarado es 0, mientras la
+  columna "2019" trae las cifras reales de 2018. Cada columna cuadra por separado: pasa una
+  validación lógica y solo se detecta contra el XML del año anterior (ver H6, C2).
+- Universo: de 4.080 fondo-año con año anterior, 4.026 repiten < 10% de sus cuentas, 14 entre 10%
+  y 25%, y solo 4 sobre 75%: estos 3 y un caso parcial (F24-2022, AGF F, 76%).
+- Concentración: misma AGF, mismo año, envíos del 6-7 de abril de 2020 → proceso de carga, no caso aislado.
+- Por qué no se detectó antes: el cruce espejo (03) busca cada cifra del XML en el PDF sin mirar
+  la columna; las cifras "actuales" del XML están en el PDF como comparativo, así que el fondo
+  quedaba como espejo. Lo destapó el 03b al ubicar subtotales por glosa aunque su valor no
+  coincidiera con el XML.
+- Pendiente: contrastar F24-2022 (parcial, 76%) con su PDF.
+
 ## 6. Lecciones de método
 
 - **Un patrón de hallazgo puede ser un artefacto del script.** Con el script anterior a D18, AGF AA habría parecido la AGF con peor fidelidad del mercado. Ningún nombre de AGF se publica sin verificación a mano.
