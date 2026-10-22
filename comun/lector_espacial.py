@@ -39,6 +39,8 @@ RE_MILES_OK = re.compile(r"\d{1,3}(?:\.\d{3})*")
 
 def _valor_espacial(t):
     """(valor, formato_irregular). '(3.021424)' -> (-3021424, True)."""
+    if RE_FECHA_NUM.match(t.strip("()")):
+        return None, False          # "31.12.2023" (tambien si llego partida y se unio)
     if RE_GUION.match(t):
         return 0, False
     nucleo = t.strip("()-−–— ")

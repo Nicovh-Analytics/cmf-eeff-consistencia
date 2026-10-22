@@ -44,8 +44,9 @@ TOL = 2                     # diferencia tolerada al sumar lineas (redondeo)
 MAX_PARTES_AGREGACION = 3   # una cifra XML puede ser suma de hasta 3 lineas PDF
 
 # Subtotales del EFE: codigo XML, glosa esperada en el PDF, codigos componentes.
-EFE = {
+SUBTOTALES = {
     "operacion": dict(
+        estado="EFE",
         codigo="FlujoNetoOriginadoPorActividadesDeLaOperacion",
         glosa=re.compile(r"flujo.*operaci", re.I),
         partes=["CompraDeActivosFinancieros", "VentaCobroDeActivosFinancieros",
@@ -55,11 +56,40 @@ EFE = {
                 "MontosRecibidosDeSociedadAdministradoraEIntermediarios",
                 "OtrosIngresosDeOperacion", "OtrosGastosDeOperacionPagados"]),
     "financiamiento": dict(
+        estado="EFE",
         codigo="FlujoNetoOriginadoPorActividadesDeFinanciamiento",
         glosa=re.compile(r"flujo.*financiamiento", re.I),
         partes=["ColocacionDeCuotasEnCirculacion", "RescatesDeCuotasEnCirculacion", "Otros"]),
     # DistribucionDeBeneficios NO va como parte: es el mismo codigo del ERI/ECP y
-    # tapaba un caso conocido de agregacion (distribuciones metidas en Otros del EFE).
+    # tapaba un caso conocido de agregacion (distribuciones metidas en Otros del EFE).,
+    # --- ESF ---
+    "total_activo": dict(
+        estado="ESF",
+        codigo="TotalActivo", glosa=re.compile(r"totalactivos?(?!neto)", re.I),
+        partes=["EfectivoYEfectivoEquivalente", "ActivosFinancierosAValorRazonableConEfectoEnResultados",
+                "ActivosFinancierosAValorRazonableConEfectoEnResultadosEntregadosEnGarantia",
+                "ActivosFinancierosACostoAmortizado", "CuentasPorCobrarAIntermediarios",
+                "OtrasCuentasPorCobrar", "OtrosActivos"]),
+    "total_pasivo": dict(
+        estado="ESF",
+        codigo="TotalPasivo", glosa=re.compile(r"totalpasivos?", re.I),
+        partes=["PasivosFinancierosAValorRazonableConEfectoEnResultados", "CuentasPorAPagarIntermediarios",
+                "RescatesPorPagar", "RemuneracionesSociedadAdministradora",
+                "OtrosDocumentosYCuentasPorPagar", "OtrosPasivos"]),
+    # --- ERI ---
+    "total_ingresos": dict(
+        estado="ERI",
+        codigo="TotalIngresosPerdidasNetosDeLaOperacion", glosa=re.compile(r"totalingresos", re.I),
+        partes=["InteresesYReajustes", "IngresosPorDividendos",
+                "DiferenciasDeCambioNetasSobreActivosFinancierosACostoAmortizado",
+                "DiferenciasDeCambioNetasSobreEfectivoYEfectivoEquivalente",
+                "CambiosNetosEnValorRazonableDeActivosYPasivosFinancierosAValorRazonableConEfectoEnResultados",
+                "ResultadoEnVentaDeInstrumentosFinancieros", "OtrosEri"]),
+    "total_gastos": dict(
+        estado="ERI",
+        codigo="TotalGastosDeOperacion", glosa=re.compile(r"totalgastos", re.I),
+        partes=["ComisionDeAdministracion", "HonorariosPorCustodiaYAdministracion",
+                "CostosDeTransaccion", "OtrosGastosDeOperacion"]),
 }
 
 # Las regex se aplican sobre el texto SIN espacios (norm): hay PDFs que se
@@ -68,7 +98,9 @@ def norm(s):
     return re.sub(r"\s+", "", s).lower()
 
 # Una linea que marca el inicio de una seccion (no es componente).
-RE_ENCABEZADO = re.compile(r"flujos?deefectivo|actividadesde(la)?(operaci|financ|inversi)|^notas?")
+RE_ENCABEZADO = re.compile(r"flujos?deefectivo|actividadesde(la)?(operaci|financ|inversi)|^notas?"
+                           r"|^activos?$|^pasivos?$|^ingresos(/?p[eé]rdidas|dela)|^gastos(deoperaci[oó]n)?$"
+                           r"|expresad|milesde|^m\$")
 # Linea de fecha/columnas: "Al 31 de diciembre de 2015 2014", "Notas 2023 2022"
 RE_FECHA = re.compile(r"diciembre|^al\d|^al$|^notas?")
 RE_SUBTOTAL = re.compile(r"flujos?netos?|aumento|disminuci|saldo(inicial|final)|total")
@@ -157,6 +189,12 @@ def componentes(lineas, i_sub, cortes=frozenset(), valores=frozenset()):
         if (RE_ENCABEZADO.search(g) or RE_FECHA.search(g)) and \
                 (chicos or not any(abs(v) in valores for v in nums if v)):
             break
+                # Linea de encabezado de columnas: los montos son anios ("2018 2017", "M$ 2018 2017"),
+        # tenga o no glosa. Antes solo cortaba sin glosa, y en el ESF/ERI se sumaba como partida.
+        anios = [abs(v) for v in nums if v]
+        if anios and all(1990 <= v <= 2100 for v in anios) and \
+                ((len(anios) == 2 and anios[0] - anios[1] == 1) or not g):
+            break
         # Sin glosa: solo corta si los valores son anios ("2011 2010"). Con
         # "numeros chicos" a secas cortaba fondos diminutos (montos de 1-4
         # digitos con la glosa en la linea anterior).
@@ -203,7 +241,7 @@ def analizar_fondo(paginas, xml, coords):
 
     filas = []
     usados = set()          # lineas ya tomadas como subtotal (no reutilizar)
-    for nombre, cfg in EFE.items():
+    for nombre, cfg in SUBTOTALES.items():
         x_act = xml.get(("PeriodoActual", cfg["codigo"]))
         x_ant = xml.get(("PeriodoAnterior", cfg["codigo"]))
         if x_act is None:
@@ -227,8 +265,9 @@ def analizar_fondo(paginas, xml, coords):
             continue
         usados.add(i)
         _, s_act, s_ant, _ = planas[i]
-        cortes = {abs(xml.get((c, otro["codigo"])) or 0) for otro in EFE.values() if otro is not cfg
-                  for c in ("PeriodoActual", "PeriodoAnterior")} - {0}
+        cortes = {abs(xml.get((c, otro["codigo"])) or 0) for otro in SUBTOTALES.values()
+            if otro is not cfg and otro["estado"] == cfg["estado"]
+            for c in ("PeriodoActual", "PeriodoAnterior")} - {0}
         comp = componentes(planas, i, cortes, valores)
         for col, x_tot, s_pdf, idx in (("actual", x_act, s_act, 1), ("anterior", x_ant, s_ant, 2)):
             if x_tot is None or s_pdf is None:
@@ -359,7 +398,7 @@ def main():
     enc = enc[enc["es_ultimo_envio"]][["rut", "anio", "archivo", "moneda"]]
     ok = res[res["estado"] == "ok"].drop(columns=["moneda"], errors="ignore").merge(enc, on=["rut", "anio"])
 
-    codigos = {cfg["codigo"] for cfg in EFE.values()} | {c for cfg in EFE.values() for c in cfg["partes"]}
+    codigos = {cfg["codigo"] for cfg in SUBTOTALES.values()} | {c for cfg in SUBTOTALES.values() for c in cfg["partes"]}
     cta = pd.read_csv(DIR_PROC / "cuentas.csv",
                       usecols=["archivo", "contexto", "codigo", "serie", "valor"], dtype={"serie": str})
     cta = cta[cta["serie"].isna() & cta["codigo"].isin(codigos) & cta["archivo"].isin(ok["archivo"])]

@@ -20,6 +20,9 @@ RE_NUM = re.compile(r"[\d()\-.]")
 
 
 def pagina_efe(rut, anio):
+    if len(sys.argv) > 3 and sys.argv[3].startswith("p="):      # uso: rut anio p=7
+        r = res[(res.rut == rut) & (res.anio == anio)].iloc[0]
+        return CMF_HOME / "archivos" / rut / str(anio) / r["pdf"], int(sys.argv[3][2:])
     r = res[(res.rut == rut) & (res.anio == anio)].iloc[0]
     pdf = Path(CMF_HOME / "archivos") / rut / str(anio) / r["pdf"]
     est = pd.read_csv(CMF_HOME / "procesado" / "estructura_efe.csv", dtype={"rut": str},
