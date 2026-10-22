@@ -99,8 +99,8 @@ def norm(s):
 
 # Una linea que marca el inicio de una seccion (no es componente).
 RE_ENCABEZADO = re.compile(r"flujos?deefectivo|actividadesde(la)?(operaci|financ|inversi)|^notas?"
-                           r"|^(activos?|pasivos?)(notas?|m\$)*$|^ingresos(/?p[eé]rdidas|dela)"
-                           r"|^gastos(deoperaci[oó]n)?$|expresad|milesde|m\$")
+                           r"|^(activos?|pasivos?)(notas?|m\$|mus\$)*$|^ingresos(/?p[eé]rdidas|dela)"
+                           r"|^gastos(deoperaci[oó]n)?$|expresad|milesde|m\$|us\$")
 # Linea de fecha/columnas: "Al 31 de diciembre de 2015 2014", "Notas 2023 2022"
 RE_FECHA = re.compile(r"diciembre|^al\d|^al$|^notas?")
 RE_SUBTOTAL = re.compile(r"flujos?netos?|aumento|disminuci|saldo(inicial|final)|total")

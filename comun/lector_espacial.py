@@ -32,7 +32,7 @@ GAP_FRANJA = 20.0     # separacion minima entre franjas de columnas (medido: 70-
 TOL_FRANJA = 20.0     # distancia maxima del borde derecho a la franja (guion centrado: ~13)
 TOL_FILA = 12.0       # distancia vertical maxima monto -> glosa (medido: hasta 6)
 RE_FECHA_NUM = re.compile(r"^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$")   # 31.12.2021 es texto, no monto
-RE_NUMTOK = re.compile(r"^\(*[-−–—]?[\d.]*\d[\d.]*\)*$|^\($|^[-−–—]$|^[\d.]*\)$")
+RE_NUMTOK = re.compile(r"^\(*[-−–—]?[\d.]*\d[\d.]*\)*$|^\($|^[-−–—]$|^[\d.]*\)$|^\.$")
 RE_GUION = re.compile(r"^[-−–—]$")
 RE_MILES_OK = re.compile(r"\d{1,3}(?:\.\d{3})*")
 
@@ -143,6 +143,15 @@ def filas_espaciales(pagina):
         d_ant = abs(w[2] - f_ant) if f_ant else 1e9
         if min(d_act, d_ant) <= TOL_FRANJA:
             col = "act" if d_act <= d_ant else "ant"
+            # Digito suelto entre columnas ("5" junto a "93.819"): se descarta solo si
+            # compite con un monto alineado de 3+ digitos en la misma fila y columna.
+            # Un monto chico real (94, 9) desalineado unos pt se conserva.
+            if re.fullmatch(r"\(?\d{1,2}\)?", w[0]) and min(d_act, d_ant) > 5:
+                borde = f_act if col == "act" else f_ant
+                rival = any(o is not w and abs(o[3] - w[3]) <= 3 and abs(o[2] - borde) <= 5
+                            and len(re.sub(r"\D", "", o[0])) >= 3 for o in nums)
+                if rival:
+                    continue
         elif re.fullmatch(r"\d{1,2}", w[0]) and ancho * 0.4 < w[2] < f_act - 25:
             col = "nota"
         else:
@@ -181,6 +190,14 @@ def filas_espaciales(pagina):
         if (unidas and sin_montos and RE_CONTINUACION.match(glosa)
                 and f["y"] - unidas[-1]["y"] <= 14):
             unidas[-1]["glosa"] += " " + glosa
+            continue
+        # "Total pasivos (excluido el activo neto atribuible" / "a participes)  5.711  5.272":
+        # el rotulo partido queda en la linea que tiene los montos.
+        prev = unidas[-1] if unidas else None
+        if (prev and not sin_montos and RE_CONTINUACION.match(glosa)
+                and not prev["act"] and not prev["ant"]          # None o 0 ("0" oculto bajo el rotulo)
+                and (f["act"] or f["ant"]) and f["y"] - prev["y"] <= 14):
+            prev.update(glosa=prev["glosa"] + " " + glosa, act=f["act"], ant=f["ant"], y=f["y"])
             continue
         unidas.append({"y": f["y"], "glosa": glosa, "act": f["act"], "ant": f["ant"]})
 
