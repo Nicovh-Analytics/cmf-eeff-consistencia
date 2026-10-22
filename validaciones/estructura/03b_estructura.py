@@ -99,8 +99,8 @@ def norm(s):
 
 # Una linea que marca el inicio de una seccion (no es componente).
 RE_ENCABEZADO = re.compile(r"flujos?deefectivo|actividadesde(la)?(operaci|financ|inversi)|^notas?"
-                           r"|^activos?$|^pasivos?$|^ingresos(/?p[eé]rdidas|dela)|^gastos(deoperaci[oó]n)?$"
-                           r"|expresad|milesde|^m\$")
+                           r"|^(activos?|pasivos?)(notas?|m\$)*$|^ingresos(/?p[eé]rdidas|dela)"
+                           r"|^gastos(deoperaci[oó]n)?$|expresad|milesde|m\$")
 # Linea de fecha/columnas: "Al 31 de diciembre de 2015 2014", "Notas 2023 2022"
 RE_FECHA = re.compile(r"diciembre|^al\d|^al$|^notas?")
 RE_SUBTOTAL = re.compile(r"flujos?netos?|aumento|disminuci|saldo(inicial|final)|total")
@@ -232,6 +232,13 @@ def analizar_fondo(paginas, xml, coords):
     usa para ubicar el subtotal y para comparar."""
     valores = {abs(v) for v in xml.values() if v}
     lineas, irregulares = [], []
+    # Pagina "espaciada": mas de la mitad de las palabras son de 1 caracter (plantilla con
+    # letras y digitos sueltos, a veces en capas superpuestas). Ahi un no-suma es lectura.
+    espaciadas = set()
+    for p in paginas:
+        pal = coords["paginas"].get(str(p), {}).get("palabras", [])
+        if pal and sum(len(w[0]) == 1 for w in pal) / len(pal) > 0.5:
+            espaciadas.add(p)
     for p in paginas:
         if str(p) in coords["paginas"]:
             filas_p, irr = filas_espaciales(coords["paginas"][str(p)])
@@ -299,6 +306,7 @@ def analizar_fondo(paginas, xml, coords):
                 return "~" if abs(v) in otra_col else "?"
             filas.append(dict(
                 subtotal=nombre, ubicado=True, columna=col, pagina=lineas[i][4],
+                pagina_espaciada=lineas[i][4] in espaciadas,
                 glosa_esperada=glosa_ok,   # False: ubicado por valor, rotulo distinto
                 formato_irregular=" ".join(irregulares), metodo = metodo,
                 subtotal_pdf=s_pdf, subtotal_xml=x_tot, suma_lineas_pdf=suma,
@@ -389,6 +397,10 @@ def clasificar(df):
     c.loc[c["dif"].abs() <= umbral, "clase"] = "observacion_inmaterial"
     cols = ["rut", "anio", "nombre_agf", "moneda", "subtotal", "columna", "clase", "clase_detalle", "patron", "dif",
             "subtotal_pdf", "suma_lineas_pdf", "subtotal_xml", "igual_xml", "tasa_agf_pct", "detalle"]
+    if "pagina_espaciada" in c:
+        baja = c["pagina_espaciada"].fillna(False).astype(bool) & c["clase"].str.startswith("probable_error")
+        c.loc[baja, "clase_detalle"] = c.loc[baja, "clase"]       # se conserva la clase original
+        c.loc[baja, "clase"] = "probable_lectura"
     return c[cols].sort_values(["clase", "tasa_agf_pct", "rut", "anio"])
 
 
