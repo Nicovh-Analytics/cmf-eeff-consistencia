@@ -22,6 +22,11 @@ RE_NUM = re.compile(r"[\d()\-.]")
 def pagina_efe(rut, anio):
     r = res[(res.rut == rut) & (res.anio == anio)].iloc[0]
     pdf = Path(CMF_HOME / "archivos") / rut / str(anio) / r["pdf"]
+    est = pd.read_csv(CMF_HOME / "procesado" / "estructura_efe.csv", dtype={"rut": str},
+                      usecols=["rut", "anio", "pagina"])
+    e = est[(est.rut == rut) & (est.anio == anio) & est.pagina.notna()]
+    if len(e):
+        return pdf, int(e.pagina.mode()[0])      # la pagina que leyo el 03b
     datos = json.load(open(Path(CMF_HOME / "texto_pdf") / rut / str(anio) / (Path(r["pdf"]).stem + ".json"), encoding="utf-8"))
     pags = [int(p) for p in str(r["paginas_estados"]).split(",") if p.strip().isdigit()]
     # la pagina de estados con el titulo del EFE y mas montos

@@ -27,7 +27,7 @@ from config import CMF_HOME
 
 RE_CONTINUACION = re.compile(r"^[a-záéíóúñ][^\d]{0,40}$")
 DIR_COORDS = CMF_HOME / "coords_pdf"
-GAP_UNION = 1.0       # trozos de un mismo monto: separados por <1 pt (medido: 0.0-0.1)
+GAP_UNION = 2.0       # trozos de un mismo monto: separados por <1 pt (medido: 0.0-0.1)
 GAP_FRANJA = 20.0     # separacion minima entre franjas de columnas (medido: 70-90)
 TOL_FRANJA = 20.0     # distancia maxima del borde derecho a la franja (guion centrado: ~13)
 TOL_FILA = 12.0       # distancia vertical maxima monto -> glosa (medido: hasta 6)

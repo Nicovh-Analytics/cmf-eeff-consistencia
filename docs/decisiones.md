@@ -264,7 +264,9 @@ Enlace de notas (FMNO) roto en 15 fondo-año: el PDF devuelve "ACCION NO PERMITI
   la columna; las cifras "actuales" del XML están en el PDF como comparativo, así que el fondo
   quedaba como espejo. Lo destapó el 03b al ubicar subtotales por glosa aunque su valor no
   coincidiera con el XML.
-- Pendiente: contrastar F24-2022 (parcial, 76%) con su PDF.
+- F24-2022 (AGF F) confirmado: el PDF 2022 presenta cifras propias que cuadran; el XML repite el
+  de 2021 en el 80% de las cuentas, con algunas cifras retocadas (p. ej. operación anterior 1.308.972
+  vs 1.308.872 en el XML 2021). 
 
 ## 6. Lecciones de método
 
@@ -294,6 +296,13 @@ Enlace de notas (FMNO) roto en 15 fondo-año: el PDF devuelve "ACCION NO PERMITI
   "((31.340.008.234)", rótulo de subtotal incorrecto (una plantilla de AGF, 66 casos).
 - Pendiente: OCR para EFE como imagen (~192 fondo-año; Tesseract entrega cajas → mismo lector, con
   marca de origen OCR); extensión a ESF y ERI (configuración por estado); ECP requiere N columnas.
+- GAP_UNION 1,0 → 2,0 pt (2026-10-21). Una plantilla escribe cada dígito como palabra
+  separada, con huecos de hasta 1,4 pt entre dígitos ("160" + ".680"). Con 1,0 se cortaban
+  montos y 3 subtotal-columna (F25-2024 x2, F26-2025) caían como probable_error cuando eran
+  lectura. Con 2,0: no suman 125 → 122, probable_error* 39 → 36, casos conocidos sin cambios.
+  Margen: columnas a 20+ pt, nota a ~30 pt; un espacio real dentro de un monto mide 2,5-3 pt.
+- 03b: respaldo de ubicación por glosa única (solo_glosa) cuando el subtotal impreso difiere
+  del XML; antes un subtotal mal impreso quedaba "no ubicado" (F27-2025). Ubicación 98,7% → 99,0/98,9%.
 
 ---
 ## Extensiones previstas

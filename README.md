@@ -42,8 +42,8 @@ Cada regla del pipeline existe por un caso concreto. El registro está en [`docs
 |---|---|
 | fondo-año analizados | 4.212 |
 | subtotales ubicados en el PDF (operación / financiamiento) | 99,0% / 98,9% |
-| subtotal-columna que no suman | 125 (0,8%) |
-| clasificados como probable error del PDF, sobre el umbral de materialidad | 39 |
+| subtotal-columna que no suman | 122 (0,7%) |
+| clasificados como probable error del PDF, sobre el umbral de materialidad | 36 |
 | **revisados manualmente: confirmados como error real** | **9 de 9** (IC 95% ≈ 70–100%) |
 
 Los que no suman se clasifican automáticamente:
