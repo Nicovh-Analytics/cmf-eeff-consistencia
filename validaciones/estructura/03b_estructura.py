@@ -79,7 +79,7 @@ SUBTOTALES = {
     # --- ERI ---
     "total_ingresos": dict(
         estado="ERI",
-        codigo="TotalIngresosPerdidasNetosDeLaOperacion", glosa=re.compile(r"totalingresos", re.I),
+        codigo="TotalIngresosPerdidasNetosDeLaOperacion", glosa=re.compile(r"otal,?(de)?\(?(p[eé]rdidas?\)?/?)?ingresos?", re.I),
         partes=["InteresesYReajustes", "IngresosPorDividendos",
                 "DiferenciasDeCambioNetasSobreActivosFinancierosACostoAmortizado",
                 "DiferenciasDeCambioNetasSobreEfectivoYEfectivoEquivalente",

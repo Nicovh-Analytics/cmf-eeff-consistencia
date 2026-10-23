@@ -43,7 +43,7 @@ Se reconstruyen desde el PDF seis subtotales —flujo de operación y de financi
 | | |
 |---|---|
 | fondo-año analizados | 4.280 |
-| subtotales ubicados en el PDF | 92,6% (total ingresos) a 99,0% (resto) |
+| subtotales ubicados en el PDF | 97,3% (total gastos) a 99,0% (resto) |
 | subtotal-columna que no suman | 241 (0,5%) |
 | clasificados como probable error del PDF, sobre el umbral de materialidad | 57 (EFE 35, ESF/ERI 22) |
 | **revisados manualmente: confirmados como error real** | **EFE 9/9 · ESF/ERI 22/22**¹ |
