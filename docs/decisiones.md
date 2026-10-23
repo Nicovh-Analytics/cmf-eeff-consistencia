@@ -303,6 +303,20 @@ Enlace de notas (FMNO) roto en 15 fondo-año: el PDF devuelve "ACCION NO PERMITI
   Margen: columnas a 20+ pt, nota a ~30 pt; un espacio real dentro de un monto mide 2,5-3 pt.
 - 03b: respaldo de ubicación por glosa única (solo_glosa) cuando el subtotal impreso difiere
   del XML; antes un subtotal mal impreso quedaba "no ubicado" (F27-2025). Ubicación 98,7% → 99,0/98,9%.
+  - Extensión a ESF y ERI (2026-10-22): total activo/pasivo/ingresos/gastos. Muestra manual de 37
+  probable_error*: 21 error real del PDF, 16 lectura en 4 causas (rótulo de total en 2 líneas con un
+  "0" oculto, punto suelto que parte el monto, encabezado MUS$ con años, dígito suelto entre
+  columnas). Corregidas las 4: precisión 21/23 (91%); el EFE no empeoró (operación 43→42).
+- Hallazgo: en ESF/ERI el error está en el TOTAL impreso (17 de 21: dígito/transposición, valor de
+  otra línea, total en blanco), al revés que en el EFE (total correcto, línea mal). 2 errores se
+  arrastran al comparativo del año siguiente (como H5).
+- Regla de páginas espaciadas: si >50% de las palabras son de 1 carácter, un no-suma es lectura.
+- Correcciones al lector por la muestra ESF/ERI: punto suelto como trozo de monto; dígito
+  desalineado se descarta solo si compite con un monto alineado; rótulo de total en 2 líneas
+  (incluso con un "0" oculto en la primera); monto del total hasta 20 pt sobre su rótulo; MUS$.
+  Resultado: 16/16 lecturas resueltas, 22/22 errores conservados (en muestra).
+- Mecanismo recurrente: total impreso con el valor de otra línea del mismo estado (F28, F15-2011,
+  F29). Candidato a regla automática.
 
 ---
 ## Extensiones previstas

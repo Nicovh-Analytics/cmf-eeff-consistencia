@@ -200,7 +200,15 @@ def filas_espaciales(pagina):
             prev.update(glosa=prev["glosa"] + " " + glosa, act=f["act"], ant=f["ant"], y=f["y"])
             continue
         unidas.append({"y": f["y"], "glosa": glosa, "act": f["act"], "ant": f["ant"]})
-
+    # Monto del total impreso un poco ARRIBA de su rotulo ("(204.537)" / "Total gastos de operacion"):
+    # una fila sin glosa con montos, seguida de cerca por un "Total ..." sin montos -> el monto baja.
+    for k in range(len(unidas) - 1):
+        a, b = unidas[k], unidas[k + 1]
+        if (not a["glosa"].strip() and (a["act"] or a["ant"])
+                and b["glosa"].strip().lower().startswith("total")
+                and not b["act"] and not b["ant"] and b["y"] - a["y"] <= 20):
+            b["act"], b["ant"] = a["act"], a["ant"]
+            a["act"] = a["ant"] = None
     out = []
     for f in unidas:
         if f["act"] is None and f["ant"] is None:

@@ -36,15 +36,19 @@ Cada regla del pipeline existe por un caso concreto. El registro está en [`docs
 
 **Universo:** ~4.500 estados financieros anuales de fondos mutuos vigentes, 2011–2025.
 
-### Estructura del EFE leída desde el PDF (03b)
+### Estructura de los estados leída desde el PDF (03b)
+
+Se reconstruyen desde el PDF seis subtotales —flujo de operación y de financiamiento (EFE), total activo y total pasivo (ESF), total ingresos y total gastos (ERI)— y se verifica que cada uno sea la suma de sus líneas.
 
 | | |
 |---|---|
-| fondo-año analizados | 4.212 |
-| subtotales ubicados en el PDF (operación / financiamiento) | 99,0% / 98,9% |
-| subtotal-columna que no suman | 122 (0,7%) |
-| clasificados como probable error del PDF, sobre el umbral de materialidad | 36 |
-| **revisados manualmente: confirmados como error real** | **9 de 9** (IC 95% ≈ 70–100%) |
+| fondo-año analizados | 4.280 |
+| subtotales ubicados en el PDF | 92,6% (total ingresos) a 99,0% (resto) |
+| subtotal-columna que no suman | 241 (0,5%) |
+| clasificados como probable error del PDF, sobre el umbral de materialidad | 57 (EFE 35, ESF/ERI 22) |
+| **revisados manualmente: confirmados como error real** | **EFE 9/9 · ESF/ERI 22/22**¹ |
+
+¹ La muestra del ESF/ERI (37 casos) también se usó para corregir el lector: 16 eran lectura nuestra, por 4 causas que se corrigieron. La cifra es sobre esa misma muestra; una muestra independiente queda pendiente.
 
 Los que no suman se clasifican automáticamente:
 
@@ -56,7 +60,7 @@ Los que no suman se clasifican automáticamente:
 | `probable_lectura` | alguna línea no se pudo leer bien; el error es probablemente nuestro |
 | `observacion_inmaterial` | diferencia ≤ 100 (M$) o ≤ 1 (otra moneda); se registra pero no se revisa |
 
-**Patrón en los errores confirmados:** en todos, el **subtotal impreso es correcto** y el error está en una línea (un dígito mal tipeado, o una línea que no correspondía). Eso sugiere que el total viene de la contabilidad y las líneas se transcriben a mano.
+**Patrón en los errores confirmados:** en el EFE, el **subtotal impreso es correcto** y el error está en una línea. En el ESF y el ERI es al revés: en 18 de 22 casos el error está en el **total impreso** (un dígito, una transposición, el valor de otra línea o el total en blanco), mientras sus partidas coinciden con el XML. En dos casos, el error se repite en el comparativo del año siguiente.
 
 También se detectan **observaciones de formato** en el PDF: montos con la agrupación de miles mal escrita, como `(3.021424)`; paréntesis duplicados, como `((31.340.008.234)`; y subtotales con rótulo de otra sección.
 
