@@ -404,7 +404,7 @@ def clasificar(df):
         c.loc[baja, "clase_detalle"] = c.loc[baja, "clase"]       # se conserva la clase original
         c.loc[baja, "clase"] = "probable_lectura"
     if "pagina_ocr" in c:
-        baja = c["pagina_ocr"].fillna(False).astype(bool) & c["clase"].str.startswith("probable_error")
+        baja = c["pagina_ocr"].fillna(False).astype(bool)
         c.loc[baja, "clase_detalle"] = c.loc[baja, "clase"]
         c.loc[baja, "clase"] = "probable_lectura_ocr"
     return c[cols].sort_values(["clase", "tasa_agf_pct", "rut", "anio"])
