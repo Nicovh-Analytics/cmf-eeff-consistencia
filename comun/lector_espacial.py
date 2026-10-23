@@ -218,10 +218,21 @@ def filas_espaciales(pagina):
     return out, irregulares
 
 
-def cargar_coords(rut, anio, pdf):
-    ruta = DIR_COORDS / str(rut) / str(anio) / (Path(pdf).stem + ".json.gz")
+def _leer_cache(ruta):
     if not ruta.exists():
         return None
     with gzip.open(ruta, "rt", encoding="utf-8") as f:
         d = json.load(f)
     return None if d.get("error") else d
+
+
+def cargar_coords(rut, anio, pdf):
+    """Cache del 03a + cache OCR (03a_ocr). Las paginas OCR reemplazan a las del 03a:
+    solo se hace OCR de paginas que en el PDF son imagen (casi sin texto)."""
+    carpeta = DIR_COORDS / str(rut) / str(anio)
+    d = _leer_cache(carpeta / (Path(pdf).stem + ".json.gz"))
+    o = _leer_cache(carpeta / (Path(pdf).stem + ".ocr.json.gz"))
+    if o and o.get("paginas"):
+        d = d or {"pdf": pdf, "error": None, "paginas": {}}
+        d["paginas"].update(o["paginas"])
+    return d

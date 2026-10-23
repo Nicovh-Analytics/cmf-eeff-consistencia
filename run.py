@@ -25,6 +25,7 @@ ETAPAS = [
 ("07",  "validaciones/continuidad/07_continuidad.py", "continuidad entre periodos",           True,  []),
 ("03",  "validaciones/fidelidad/03_cruce_PDF.py",  "cruce XML vs PDF (texto)",                True,  []),
 ("03a", "validaciones/fidelidad/03a_coordenadas.py", "coordenadas del PDF",                  True,  []),
+("03o", "validaciones/fidelidad/03a_ocr.py", "OCR de paginas imagen (requiere Tesseract)", True, []),
 ("03b", "validaciones/estructura/03b_estructura.py", "subtotales e identidades",            True,  []),
 ("04",  "consolidacion/04_candidatos.py",          "consolida candidatos",                    True,  []),
 ("06",  "consolidacion/06_ficha.py",               "fichas de verificacion (requiere muestra)", False, ["--muestra"]),

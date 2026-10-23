@@ -235,6 +235,7 @@ def analizar_fondo(paginas, xml, coords):
     # Pagina "espaciada": mas de la mitad de las palabras son de 1 caracter (plantilla con
     # letras y digitos sueltos, a veces en capas superpuestas). Ahi un no-suma es lectura.
     espaciadas = set()
+    ocr = {p for p in paginas if coords["paginas"].get(str(p), {}).get("origen") == "ocr"}
     for p in paginas:
         pal = coords["paginas"].get(str(p), {}).get("palabras", [])
         if pal and sum(len(w[0]) == 1 for w in pal) / len(pal) > 0.5:
@@ -305,6 +306,7 @@ def analizar_fondo(paginas, xml, coords):
                     return "#"          # mismo largo que una cifra XML faltante, 1 digito distinto o 2 contiguos permutados
                 return "~" if abs(v) in otra_col else "?"
             filas.append(dict(
+                pagina_ocr=lineas[i][4] in ocr,
                 subtotal=nombre, ubicado=True, columna=col, pagina=lineas[i][4],
                 pagina_espaciada=lineas[i][4] in espaciadas,
                 glosa_esperada=glosa_ok,   # False: ubicado por valor, rotulo distinto
@@ -401,14 +403,20 @@ def clasificar(df):
         baja = c["pagina_espaciada"].fillna(False).astype(bool) & c["clase"].str.startswith("probable_error")
         c.loc[baja, "clase_detalle"] = c.loc[baja, "clase"]       # se conserva la clase original
         c.loc[baja, "clase"] = "probable_lectura"
+    if "pagina_ocr" in c:
+        baja = c["pagina_ocr"].fillna(False).astype(bool) & c["clase"].str.startswith("probable_error")
+        c.loc[baja, "clase_detalle"] = c.loc[baja, "clase"]
+        c.loc[baja, "clase"] = "probable_lectura_ocr"
     return c[cols].sort_values(["clase", "tasa_agf_pct", "rut", "anio"])
+
+
 
 
 def main():
     res = pd.read_csv(DIR_PROC / "cruce_resumen.csv", dtype={"rut": str})
     enc = pd.read_csv(DIR_PROC / "encabezados.csv", dtype={"rut": str})
     enc = enc[enc["es_ultimo_envio"]][["rut", "anio", "archivo", "moneda"]]
-    ok = res[res["estado"] == "ok"].drop(columns=["moneda"], errors="ignore").merge(enc, on=["rut", "anio"])
+    ok = res[res["estado"].isin(["ok", "sin_texto"])].drop(columns=["moneda"], errors="ignore").merge(enc, on=["rut", "anio"])
 
     codigos = {cfg["codigo"] for cfg in SUBTOTALES.values()} | {c for cfg in SUBTOTALES.values() for c in cfg["partes"]}
     cta = pd.read_csv(DIR_PROC / "cuentas.csv",
@@ -424,6 +432,7 @@ def main():
             sin_coords += 1         # sin cache del 03a (o PDF con error)
             continue
         paginas = [int(p) for p in str(r.paginas_estados).split(",") if p.strip().isdigit()]
+        paginas = sorted(set(paginas) | {int(p) for p, v in coords["paginas"].items() if v.get("origen") == "ocr"})
         for f in analizar_fondo(paginas, xml_por_archivo.get(r.archivo, {}), coords):
             filas.append({"rut": r.rut, "anio": r.anio, "nombre_agf": r.nombre_agf, "moneda": r.moneda, **f})
 
