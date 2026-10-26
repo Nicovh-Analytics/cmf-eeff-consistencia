@@ -38,32 +38,28 @@ Cada regla del pipeline existe por un caso concreto. El registro está en [`docs
 
 ### Estructura de los estados leída desde el PDF (03b)
 
-Se reconstruyen desde el PDF seis subtotales —flujo de operación y de financiamiento (EFE), total activo y total pasivo (ESF), total ingresos y total gastos (ERI)— y se verifica que cada uno sea la suma de sus líneas.
+Se reconstruyen desde el PDF seis subtotales —flujo de operación y de financiamiento (EFE), total activo y total pasivo (ESF), total ingresos y total gastos (ERI)— y se verifica que cada uno sea la suma de sus líneas. La lectura usa solo la geometría de la página; el XML no interviene en cómo se lee el PDF.
 
 | | |
 |---|---|
-| fondo-año analizados | 4.280 |
-| subtotales ubicados en el PDF | 97,3% (total gastos) a 99,0% (resto) |
-| subtotal-columna que no suman | 241 (0,5%) |
-| clasificados como probable error del PDF, sobre el umbral de materialidad | 57 (EFE 35, ESF/ERI 22) |
+| fondo-año analizados | 4.473 (193 de ellos escaneados, leídos con OCR) |
+| subtotales ubicados en el PDF | 97,5% a 99,3% según el subtotal |
 | subtotales de estados publicados como imagen (OCR) | 2.477 leídos, 2.236 cuadran (90%); los que no cuadran se tratan como lectura, nunca como error |
-| **revisados manualmente: confirmados como error real** | **EFE 9/9 · ESF/ERI 22/22**¹ |
+| subtotal-columna que no suman | 474 (233 de ellos, lectura de OCR) |
+| **clasificados como probable error del PDF** | **71** |
 
-¹ La muestra del ESF/ERI (37 casos) también se usó para corregir el lector: 16 eran lectura nuestra, por 4 causas que se corrigieron. La cifra es sobre esa misma muestra; una muestra independiente queda pendiente.
-
-Los que no suman se clasifican automáticamente:
+Cada caso que no suma se clasifica:
 
 | clase | qué significa |
 |---|---|
-| `probable_error` | todas las líneas son cifras del XML y aun así no suman al subtotal impreso |
-| `probable_error_tipeo` | una línea difiere del XML en un dígito o en dos dígitos permutados |
-| `probable_error_linea_no_sumada` | una línea impresa que no entra al subtotal, y la diferencia es exactamente esa línea |
-| `probable_lectura` | alguna línea no se pudo leer bien; el error es probablemente nuestro |
-| `observacion_inmaterial` | diferencia ≤ 100 (M$) o ≤ 1 (otra moneda); se registra pero no se revisa |
+| `probable_error` / `_tipeo` / `_linea_no_sumada` | las líneas no suman al total impreso, por un dígito, una transposición o una línea que no entra |
+| `probable_error_linea_distinta` | el total impreso coincide con el XML, pero una línea del PDF está mal (la suma difiere < 5%) |
+| `probable_lectura` / `probable_lectura_ocr` | la diferencia es grosera (líneas que faltan, dígitos pegados): el error es nuestro |
+| `observacion_inmaterial` | diferencia ≤ 100 (M$) o ≤ 1 (otra moneda) |
 
-**Patrón en los errores confirmados:** en el EFE, el **subtotal impreso es correcto** y el error está en una línea. En el ESF y el ERI es al revés: en 18 de 22 casos el error está en el **total impreso** (un dígito, una transposición, el valor de otra línea o el total en blanco), mientras sus partidas coinciden con el XML. En dos casos, el error se repite en el comparativo del año siguiente.
+**Dónde está el error:** en el EFE, el subtotal impreso es correcto y el error está en una línea. En el ESF y el ERI es al revés: en 18 de 22 casos confirmados el error está en el **total impreso** (un dígito, una transposición, el valor de otra línea o el total en blanco), mientras sus partidas coinciden con el XML. En tres casos el total repite el valor de otra línea del mismo estado (ingresos, utilidad, activo neto), lo que apunta a fórmulas mal referenciadas en la planilla que arma el PDF. Varios errores se repiten en el comparativo del año siguiente.
 
-También se detectan **observaciones de formato** en el PDF: montos con la agrupación de miles mal escrita, como `(3.021424)`; paréntesis duplicados, como `((31.340.008.234)`; y subtotales con rótulo de otra sección.
+También se registran **observaciones de formato**: agrupación de miles mal escrita (`(3.021424)`), paréntesis duplicados, coma en vez de punto (`4.475,324`), caracteres sueltos impresos entre columnas y un estado de cambios rotulado como "Estado de Flujo de Efectivo".
 
 ### Cruce espejo XML ↔ PDF (03, 04)
 
@@ -107,11 +103,12 @@ Cada etapa que marca casos se contrastó con revisión manual del PDF original:
 |---|---|
 | 04 cruce espejo | muestra de 30 candidatos: 30/30 confirmados |
 | 07 continuidad | 8/8 casos conocidos detectados |
-| 03b estructura del EFE | 9/9 `probable_error*` sobre el umbral confirmados como error del PDF (IC 95% ≈ 70–100%); los casos de lectura de la muestra quedaron resueltos al pasar al lector espacial |
 | 03b, `probable_error*` del EFE | 9/9 (muestra 1) y 14/15 (muestra 2, independiente) |
-| 03b, `probable_error*` del ESF/ERI | 22/22 (en muestra; la misma se usó para corregir el lector) |
-| 03b, `probable_error_linea_distinta` (total = XML, una línea mal) | 5/5 en la muestra que la originó; **10/11 fuera de muestra** |
-| 03b, no detección | errores reales en las clases de lectura: 5/35 (14%), hoy capturados por la regla anterior; en páginas OCR: 0/15 |
+| 03b, `probable_error*` del ESF/ERI | 22/22¹ |
+| 03b, `probable_error_linea_distinta` | 5/5 en la muestra que la originó; **10/11 fuera de muestra** |
+| 03b, no detección | errores reales escondidos en las clases de lectura: 5/35 (14%), hoy capturados por `linea_distinta`; en páginas OCR: 0/15 |
+
+¹ Esa muestra (37 casos) también se usó para corregir el lector: 16 eran lectura nuestra, por 4 causas que se corrigieron. La cifra es en muestra.
 
 
 ## Hallazgos de método
@@ -131,7 +128,7 @@ Con eso, el ruido de lectura cayó a la mitad y la ubicación de subtotales subi
 
 ## Limitaciones
 
-- **PDFs como imagen:** ~190 fondo-año tienen el EFE escaneado y no se pueden leer sin OCR. El diseño está pensado: Tesseract entrega cada palabra con su caja, así que el mismo lector espacial serviría, con marca de origen OCR.
+- **PDF escaneados:** se leen con OCR (Tesseract). El 10% de los subtotales escaneados que no cuadra se trata como lectura, nunca como error, así que en esos documentos el método puede no ver un error real.
 - **Solo el EFE en la pasada estructural.** El ESF y el ERI requieren solo configuración (subtotales y glosas). El ECP tiene una columna por serie y requiere otro diseño.
 - **Solo fondos vigentes** (sesgo de supervivencia) y **solo el último envío** de cada fondo-año (los reenvíos no son observables).
 - **El cruce detecta desacuerdo, no culpa.** Cuál de los dos documentos tiene el error se determina caso a caso, en revisión manual.

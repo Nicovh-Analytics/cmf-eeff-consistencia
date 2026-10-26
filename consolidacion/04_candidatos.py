@@ -423,6 +423,22 @@ def main():
                 "estados", "periodos", "solo_por_serie", "max_faltante",
                 "activo_neto", "materialidad_pct", "paginas_sin_tabla", "reparado", "pdf"]
     cand = cand[~sin_par].sort_values(["tipo", "materialidad_pct"], ascending=[True, False])
+
+    # Cruce con el 03b: errores estructurales del PDF en el mismo fondo-anio
+    ruta_03b = DIR_PROC / "estructura_efe_no_suma.csv"
+    if ruta_03b.exists():
+        e3 = pd.read_csv(ruta_03b, dtype={"rut": str})
+        e3 = e3[e3["clase"].str.startswith("probable_error")]
+        r3 = (e3.groupby(["rut", "anio"])
+                .apply(lambda g: "; ".join(f"{r.subtotal}/{r.columna}" for r in g.itertuples()))
+                .rename("error_estructura_03b").reset_index())
+        cand = cand.merge(r3, on=["rut", "anio"], how="left")
+        claves = set(zip(cand["rut"], cand["anio"]))
+        en_ambos = sum((r, a) in claves for r, a in zip(r3["rut"], r3["anio"]))
+        print(f"\ncruce con 03b: {len(r3)} fondo-anio con error estructural; {en_ambos} tambien son "
+              f"candidatos del 04; {len(r3) - en_ambos} solo los ve el 03b")
+        columnas.append("error_estructura_03b")
+
     cand[columnas].to_csv(DIR_PROC / "candidatos.csv", index=False, encoding="utf-8-sig")
 
     # --- Por AGF, como tasa ---
