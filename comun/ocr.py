@@ -18,6 +18,7 @@ Requiere Tesseract instalado (en Windows: instalador UB-Mannheim, con el idioma
 spa). Ruta por variable TESSERACT_CMD o la ruta por defecto de Windows.
 """
 import os
+import re
 import shutil
 
 import pypdfium2 as pdfium
@@ -59,15 +60,48 @@ def ocr_pagina(img, ancho_pt, lang="eng", dpi=DPI, psm=PSM):
     return {"ancho": ancho_pt, "palabras": pal, "origen": "ocr"}
 
 
-def ocr_pdf(ruta_pdf, paginas, lang="eng", dpi=DPI):
+# Variantes que se prueban si la primera lectura tiene baja confianza en los numeros.
+# Se elige por CONFIANZA de Tesseract, no por "la que suma": elegir la lectura que
+# cuadra sesgaria el resultado hacia no ver errores (el XML/la suma como arbitro).
+VARIANTES = [(DPI, PSM), (400, PSM), (DPI, 4), (400, 4)]
+CONF_OK = 90.0
+RE_NUM = re.compile(r"\d")
+
+
+def conf_numerica(datos):
+    """Confianza media de las palabras con digitos (lo que importa para sumar)."""
+    cs = [w[5] for w in datos["palabras"] if RE_NUM.search(w[0]) and w[5] >= 0]
+    return sum(cs) / len(cs) if cs else 0.0
+
+
+def ocr_mejor(doc, pagina, lang="eng"):
+    """Primera variante; si su confianza numerica es baja, prueba las demas y se queda
+    con la de mayor confianza. Registra variante y confianza en los datos."""
+    mejor = None
+    for k, (dpi, psm) in enumerate(VARIANTES):
+        img, ancho = rasterizar(doc, pagina, dpi)
+        datos = ocr_pagina(img, ancho, lang, dpi, psm)
+        datos["conf_num"] = round(conf_numerica(datos), 1)
+        datos["variante"] = f"{dpi}dpi-psm{psm}"
+        if mejor is None or datos["conf_num"] > mejor["conf_num"]:
+            mejor = datos
+        if k == 0 and datos["conf_num"] >= CONF_OK:
+            break
+    return mejor
+
+
+def ocr_pdf(ruta_pdf, paginas, lang="eng", multipasada=False):
     """{pagina: datos} para las paginas pedidas."""
     doc = pdfium.PdfDocument(str(ruta_pdf))
     try:
         out = {}
         for p in paginas:
             if 1 <= p <= len(doc):
-                img, ancho = rasterizar(doc, p, dpi)
-                out[str(p)] = ocr_pagina(img, ancho, lang, dpi)
+                if multipasada:
+                    out[str(p)] = ocr_mejor(doc, p, lang)
+                else:
+                    img, ancho = rasterizar(doc, p, DPI)
+                    out[str(p)] = ocr_pagina(img, ancho, lang, DPI)
         return out
     finally:
         doc.close()

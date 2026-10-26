@@ -46,6 +46,7 @@ Se reconstruyen desde el PDF seis subtotales —flujo de operación y de financi
 | subtotales ubicados en el PDF | 97,3% (total gastos) a 99,0% (resto) |
 | subtotal-columna que no suman | 241 (0,5%) |
 | clasificados como probable error del PDF, sobre el umbral de materialidad | 57 (EFE 35, ESF/ERI 22) |
+| subtotales de estados publicados como imagen (OCR) | 2.455 leídos, 1.854 cuadran (76%); los que no cuadran se tratan como lectura, nunca como error |
 | **revisados manualmente: confirmados como error real** | **EFE 9/9 · ESF/ERI 22/22**¹ |
 
 ¹ La muestra del ESF/ERI (37 casos) también se usó para corregir el lector: 16 eran lectura nuestra, por 4 causas que se corrigieron. La cifra es sobre esa misma muestra; una muestra independiente queda pendiente.

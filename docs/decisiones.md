@@ -317,7 +317,12 @@ Enlace de notas (FMNO) roto en 15 fondo-año: el PDF devuelve "ACCION NO PERMITI
   Resultado: 16/16 lecturas resueltas, 22/22 errores conservados (en muestra).
 - Mecanismo recurrente: total impreso con el valor de otra línea del mismo estado (F28, F15-2011,
   F29). Candidato a regla automática.
-
+- OCR (2026-10-23/26): Tesseract spa+eng, 300 dpi, psm 6, sin binarizar. Cache aparte (.ocr.json.gz).
+  Calibración con EFE sintéticos: 0 sumas falsas; un no-suma en página OCR es lectura, nunca error.
+  En PDF reales: 76% de cuadre; causa principal: el OCR lee el separador de miles como coma
+  ("17,553,514"), y el lector no lo reconocía como monto. Normalizado al cargar (solo grupos de 3
+  dígitos, para no tocar decimales): 90%. Pasadas múltiples (400 dpi, psm 4), elegidas por confianza
+  y no por suma: 67% -> 69% en 25 fondos reales; no se adoptan.
 ---
 ## Extensiones previstas
 

@@ -35,6 +35,16 @@ RE_FECHA_NUM = re.compile(r"^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$")   # 31.12.2021 e
 RE_NUMTOK = re.compile(r"^\(*[-−–—]?[\d.]*\d[\d.]*\)*$|^\($|^[-−–—]$|^[\d.]*\)$|^\.$")
 RE_GUION = re.compile(r"^[-−–—]$")
 RE_MILES_OK = re.compile(r"\d{1,3}(?:\.\d{3})*")
+RE_MILES_COMA = re.compile(r"^\(?-?\d{1,3}(?:[.,]\d{3})+\)?[.,]?$")
+
+
+def normalizar_ocr(pagina):
+    """OCR: '17,553,514' -> '17.553.514' (separador de miles leido como coma). Solo
+    con grupos de 3 digitos: '1,40' (decimal) no cambia."""
+    for w in pagina["palabras"]:
+        if "," in w[0] and RE_MILES_COMA.match(w[0]):
+            w[0] = w[0].replace(",", ".")
+    return pagina
 
 
 def _valor_espacial(t):
@@ -234,5 +244,5 @@ def cargar_coords(rut, anio, pdf):
     o = _leer_cache(carpeta / (Path(pdf).stem + ".ocr.json.gz"))
     if o and o.get("paginas"):
         d = d or {"pdf": pdf, "error": None, "paginas": {}}
-        d["paginas"].update(o["paginas"])
+        d["paginas"].update({p: normalizar_ocr(v) for p, v in o["paginas"].items()})
     return d
