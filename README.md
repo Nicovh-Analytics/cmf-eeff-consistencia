@@ -113,8 +113,7 @@ Cada etapa que marca casos se contrastó con revisión manual del PDF original:
 
 ## Hallazgos de método
 
-**1. El cruce por números tiene un punto ciego.** Buscar cada cifra del XML en el PDF no detecta un error si el valor equivocado coincide con otra cifra del documento, porque no queda ningún monto huérfano. Por eso el 03b no busca cifras: **reconstruye cada estado y verifica que sume**.
-Una variante del mismo punto ciego: si el XML trae las cifras corridas de columna, cada una "aparece" en el PDF y el fondo pasa como espejo perfecto.
+**1. El cruce por números tiene un punto ciego.** Buscar cada cifra del XML en el PDF no detecta un error si el valor equivocado coincide con otra cifra del documento, porque no queda ningún monto huérfano. Por eso el 03b no busca cifras: **reconstruye cada estado y verifica que sume**. Medido: de 69 fondo-año con error estructural en el PDF, **34 no aparecen** entre los candidatos del cruce espejo.
 
 **2. Leer el PDF por posición, no por texto.** La primera versión del 03b leía el texto extraído y acumuló reglas por cada plantilla de AGF: números de nota, montos partidos por la extracción, negrita simulada, glosas en dos líneas. Además usaba el XML para decidir cómo leer el PDF, y **auditar un documento usando como árbitro al documento auditado sesga el resultado**. La versión final usa la geometría de la página:
 

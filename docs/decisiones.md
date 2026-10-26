@@ -1,3 +1,5 @@
+<!-- Generado por verificacion/anonimizar_docs.py desde decisiones_privado.md. No editar aqui. -->
+
 # Registro de decisiones
 
 Cada regla del pipeline existe por un caso concreto. Este archivo documenta **qué se decidió, qué caso lo motivó y qué efecto tuvo**, para que cualquier cifra del análisis se pueda rastrear hasta su origen.
