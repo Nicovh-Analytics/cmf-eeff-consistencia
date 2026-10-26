@@ -46,7 +46,7 @@ Se reconstruyen desde el PDF seis subtotales —flujo de operación y de financi
 | subtotales ubicados en el PDF | 97,3% (total gastos) a 99,0% (resto) |
 | subtotal-columna que no suman | 241 (0,5%) |
 | clasificados como probable error del PDF, sobre el umbral de materialidad | 57 (EFE 35, ESF/ERI 22) |
-| subtotales de estados publicados como imagen (OCR) | 2.455 leídos, 1.854 cuadran (76%); los que no cuadran se tratan como lectura, nunca como error |
+| subtotales de estados publicados como imagen (OCR) | 2.477 leídos, 2.236 cuadran (90%); los que no cuadran se tratan como lectura, nunca como error |
 | **revisados manualmente: confirmados como error real** | **EFE 9/9 · ESF/ERI 22/22**¹ |
 
 ¹ La muestra del ESF/ERI (37 casos) también se usó para corregir el lector: 16 eran lectura nuestra, por 4 causas que se corrigieron. La cifra es sobre esa misma muestra; una muestra independiente queda pendiente.
@@ -108,6 +108,9 @@ Cada etapa que marca casos se contrastó con revisión manual del PDF original:
 | 04 cruce espejo | muestra de 30 candidatos: 30/30 confirmados |
 | 07 continuidad | 8/8 casos conocidos detectados |
 | 03b estructura del EFE | 9/9 `probable_error*` sobre el umbral confirmados como error del PDF (IC 95% ≈ 70–100%); los casos de lectura de la muestra quedaron resueltos al pasar al lector espacial |
+| 03b, `probable_error*` del EFE | 9/9 (muestra 1) y 14/15 (muestra 2, independiente) |
+| 03b, `probable_error*` del ESF/ERI | 22/22 (en muestra; la misma se usó para corregir el lector) |
+| 03b, no detección | errores reales escondidos en las clases de lectura: 5/35 (14%) en muestra al azar; en páginas OCR: 0/15 |
 
 ## Hallazgos de método
 

@@ -392,6 +392,15 @@ def clasificar(df):
     c["dif"] = (c["suma_lineas_pdf"] - c["subtotal_pdf"]).round(0)
     c["patron"] = c["dif"].map(patron_dif)
     c["tasa_agf_pct"] = c["nombre_agf"].map(tasa)
+    # Linea distinta con total correcto: total impreso = XML y la suma de lineas difiere poco
+    # (< 5% del total). Un error de lectura produce diferencias groseras (lineas que faltan,
+    # digitos pegados); un error de digitacion en una linea, una diferencia chica.
+    # Muestra v2 (35 casos lectura/linea faltante): separa 5/5 errores y 0/28 lecturas (en muestra).
+    rel = (c["suma_lineas_pdf"] - c["subtotal_pdf"]).abs() / c["subtotal_pdf"].abs().clip(lower=1)
+    linea = (c["clase"].isin(["probable_lectura", "revisar_linea_faltante"])
+             & c["igual_xml"].fillna(False).astype(bool) & (rel < 0.05))
+    c.loc[linea, "clase_detalle"] = c.loc[linea, "clase"]
+    c.loc[linea, "clase"] = "probable_error_linea_distinta"
     # Bajo el umbral de materialidad: observacion, sin revision (la clase
     # original queda en clase_detalle).
     umbral = c["moneda"].map(umbral_materialidad)      # config.py
