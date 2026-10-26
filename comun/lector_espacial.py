@@ -32,7 +32,7 @@ GAP_FRANJA = 20.0     # separacion minima entre franjas de columnas (medido: 70-
 TOL_FRANJA = 20.0     # distancia maxima del borde derecho a la franja (guion centrado: ~13)
 TOL_FILA = 12.0       # distancia vertical maxima monto -> glosa (medido: hasta 6)
 RE_FECHA_NUM = re.compile(r"^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$")   # 31.12.2021 es texto, no monto
-RE_NUMTOK = re.compile(r"^\(*[-−–—]?[\d.]*\d[\d.]*\)*$|^\($|^[-−–—]$|^[\d.]*\)$|^\.$")
+RE_NUMTOK = re.compile(r"^\(*[-−–—]?[\d.]*\d[\d.]*(,\d{2})?\)*$|^\($|^[-−–—]$|^[\d.]*\)$|^\.$")
 RE_GUION = re.compile(r"^[-−–—]$")
 RE_MILES_OK = re.compile(r"\d{1,3}(?:\.\d{3})*")
 RE_MILES_COMA = re.compile(r"^\(?-?\d{1,3}(?:[.,]\d{3})+\)?[.,]?$")
@@ -54,6 +54,7 @@ def _valor_espacial(t):
     if RE_GUION.match(t):
         return 0, False
     nucleo = t.strip("()-−–— ")
+    nucleo = re.sub(r",\d{2}$", "", nucleo)      # "86.451,00": decimales de presentacion (cifras en miles)
     dig = re.sub(r"\D", "", nucleo)
     if not dig:
         return None, False

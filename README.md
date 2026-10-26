@@ -110,7 +110,9 @@ Cada etapa que marca casos se contrastó con revisión manual del PDF original:
 | 03b estructura del EFE | 9/9 `probable_error*` sobre el umbral confirmados como error del PDF (IC 95% ≈ 70–100%); los casos de lectura de la muestra quedaron resueltos al pasar al lector espacial |
 | 03b, `probable_error*` del EFE | 9/9 (muestra 1) y 14/15 (muestra 2, independiente) |
 | 03b, `probable_error*` del ESF/ERI | 22/22 (en muestra; la misma se usó para corregir el lector) |
-| 03b, no detección | errores reales escondidos en las clases de lectura: 5/35 (14%) en muestra al azar; en páginas OCR: 0/15 |
+| 03b, `probable_error_linea_distinta` (total = XML, una línea mal) | 5/5 en la muestra que la originó; **10/11 fuera de muestra** |
+| 03b, no detección | errores reales en las clases de lectura: 5/35 (14%), hoy capturados por la regla anterior; en páginas OCR: 0/15 |
+
 
 ## Hallazgos de método
 

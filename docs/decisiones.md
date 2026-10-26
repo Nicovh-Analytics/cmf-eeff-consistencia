@@ -323,6 +323,13 @@ Enlace de notas (FMNO) roto en 15 fondo-año: el PDF devuelve "ACCION NO PERMITI
   ("17,553,514"), y el lector no lo reconocía como monto. Normalizado al cargar (solo grupos de 3
   dígitos, para no tocar decimales): 90%. Pasadas múltiples (400 dpi, psm 4), elegidas por confianza
   y no por suma: 67% -> 69% en 25 fondos reales; no se adoptan.
+- Muestra de no detección (65 casos): EFE probable_error 14/15; errores escondidos en lectura/línea
+  faltante 5/35 (14%); en OCR 0/15. Los 5 escondidos comparten firma: total impreso = XML y suma de
+  líneas a <2% del total (las lecturas: >90%). Regla probable_error_linea_distinta (< 5%):
+  16 casos, incluye los 5 y un caso conocido (F13-2022); fuera de muestra 10/11 confirmados.
+- Decimales de presentación ("86.451,00"): 2 casos de lectura (F12-2021, F30-2013) -> el lector
+  acepta y descarta ",dd".
+
 ---
 ## Extensiones previstas
 
