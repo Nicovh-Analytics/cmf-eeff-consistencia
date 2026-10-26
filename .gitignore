@@ -9,3 +9,4 @@ verificacion/
 # Secretos (por si se agregan credenciales, p. ej. API del Banco Central)
 .env
 .env.*
+.venv/
