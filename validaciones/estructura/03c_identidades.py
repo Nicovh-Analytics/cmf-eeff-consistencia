@@ -38,7 +38,7 @@ import sys
 
 import pandas as pd
 
-from config import CMF_HOME, umbral_materialidad
+from config import CMF_HOME, casos_conocidos, umbral_materialidad
 from comun.lector_espacial import cargar_coords, filas_espaciales
 
 m03b = importlib.import_module("validaciones.estructura.03b_estructura")
@@ -284,6 +284,18 @@ def main():
     for f in pe.sort_values(["clase", "identidad", "rut", "anio"]).itertuples():
         print(f"  {f.rut} {f.anio} {f.identidad:<22} {f.columna:<8} {f.clase[15:]:<6} dif={(f.dif_xml if f.clase == 'probable_error_xml' else f.dif_pdf):>14,.0f} "
               f"distinto={f.terminos_distintos_xml or '-'}  pag {f.paginas}{'  (ya en 03b)' if f.ya_en_03b else ''}")
+    print("\nvalidacion con casos conocidos:")
+    for rut, anio, esperado in casos_conocidos("03c"):       # privado: verificacion/casos_conocidos.csv
+        x = df[(df["rut"] == rut) & (df["anio"] == anio)]
+        malos = x[x["clase"] != "cuadra"]
+        if x.empty:
+            print(f"  {rut} {anio}: sin analizar")
+        elif malos.empty:
+            print(f"  {rut} {anio}: todas las identidades cuadran ({len(x)} filas)")
+        for f in malos.itertuples():
+            print(f"  {rut} {anio} {f.identidad:<22} {f.columna:<8} {f.clase:<22} "
+                  f"distinto={f.terminos_distintos_xml or '-'}")
+        print(f"      esperado: {esperado}")
     print(f"\nsalida: {DIR_PROC / 'identidades.csv'}")
     return 0
 

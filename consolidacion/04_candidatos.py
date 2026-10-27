@@ -439,6 +439,26 @@ def main():
               f"candidatos del 04; {len(r3) - en_ambos} solo los ve el 03b")
         columnas.append("error_estructura_03b")
 
+    # Cruce con el 03c: identidades entre estados que no cuadran en el mismo fondo-anio.
+    # pdf/ambos = error en el PDF; xml = el PDF cuadra y el XML no (comparativo, ver H6).
+    ruta_03c = DIR_PROC / "identidades_no_cuadra.csv"
+    if ruta_03c.exists():
+        e4 = pd.read_csv(ruta_03c, dtype={"rut": str})
+        e4 = e4[e4["clase"].isin(["probable_error_pdf", "probable_error_ambos", "probable_error_xml"])]
+        r4 = (e4.groupby(["rut", "anio"])
+                .apply(lambda g: "; ".join(f"{r.clase[15:]}:{r.identidad}/{r.columna}" for r in g.itertuples()))
+                .rename("error_identidad_03c").reset_index())
+        cand = cand.merge(r4, on=["rut", "anio"], how="left")
+        claves = set(zip(cand["rut"], cand["anio"]))
+        print("cruce con 03c (fondo-anio):")
+        for nombre, clases in (("error en PDF", ["probable_error_pdf", "probable_error_ambos"]),
+                               ("error en XML", ["probable_error_xml"])):
+            sub = e4[e4["clase"].isin(clases)]
+            fa = set(zip(sub["rut"], sub["anio"]))
+            en_ambos = len(fa & claves)
+            print(f"  {nombre}: {len(fa)}; {en_ambos} tambien son candidatos del 04; {len(fa) - en_ambos} solo los ve el 03c")
+        columnas.append("error_identidad_03c")
+
     cand[columnas].to_csv(DIR_PROC / "candidatos.csv", index=False, encoding="utf-8-sig")
 
     # --- Por AGF, como tasa ---
