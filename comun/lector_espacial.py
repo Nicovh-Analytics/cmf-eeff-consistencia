@@ -135,6 +135,21 @@ def filas_espaciales(pagina):
     if not franjas:
         return [], []
     f_act, f_ant = (franjas[-2], franjas[-1]) if len(franjas) >= 2 else (franjas[-1], None)
+    # Primer anio NIIF (2011): ESF con 3 columnas "2011 | 2010 | 2010" (la ultima es el
+    # balance de apertura al 01-01-2010). Se reconoce por la fila de anios del encabezado:
+    # mismo anio en las dos ultimas franjas y el anterior en la tercera desde la derecha.
+    if len(franjas) >= 3:
+        filas_anio = {}
+        for w in palabras:
+            # "2011" suelto o fecha "31/12/2011", "01.01.2010", "31-12-2010"
+            m = re.fullmatch(r"(?:\d{1,2}[./-]\d{1,2}[./-])?((?:19|20)\d\d)", w[0])
+            if m:
+                filas_anio.setdefault(round(w[3] / 3), []).append((int(m.group(1)), w[2]))
+        for ws in filas_anio.values():
+            col = [next((a for a, x1 in ws if abs(x1 - fx) <= TOL_FRANJA), None) for fx in franjas[-3:]]
+            if None not in col and col[1] == col[2] and col[0] == col[1] + 1:
+                f_act, f_ant = franjas[-3], franjas[-2]      # la columna de apertura queda fuera
+                break
 
     # Filas de glosa: palabras de texto agrupadas por altura
     filas = []
