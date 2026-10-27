@@ -63,7 +63,7 @@ LINEAS = {
         patron_codigo=r"^(Utilidad|Resultado).*Operacion"),
     "efectivo": dict(
         estado="ESF",
-        glosa=re.compile(r"^efectivoy(efectivo)?equivalentes?(al(efectivo)?)?[^a-z]*$"),
+        glosa=re.compile(r"^efectivoy(efectivo)?equivalentes?(al(efectivo)?)?[^a-z]*$"),   # "(+)" al final
         codigos=["EfectivoYEfectivoEquivalente"],
         patron_codigo=r"^EfectivoYEfectivoEquivalente$"),
     "saldo_final": dict(
@@ -110,16 +110,17 @@ def resolver_codigos(todos):
 
 
 def lineas_pagina(coords, p, cache):
-    """[(glosa+previa, glosa, act, ant, pagina)] de las lineas con montos. La previa es
-    la linea sin montos inmediatamente anterior (rotulo partido)."""
+    """[(glosa+previas, glosa, act, ant, pagina)] de las lineas con montos. Las previas son
+    hasta 2 lineas sin montos inmediatamente anteriores (rotulo partido en 2 o 3 lineas:
+    "Utilidad (perdida) de la" / "operacion antes de" / "impuesto  (15.751)")."""
     if p not in cache:
         pg = coords["paginas"].get(str(p))
         out, previa = [], ""
         for g, a, b, _ in (filas_espaciales(pg)[0] if pg else []):
             if a is None:
-                previa = g
+                previa = (previa.split("\x00")[-1] + "\x00" + g) if previa else g   # ultimas 2
                 continue
-            out.append((norm(previa + " " + g), norm(g), a, b, p))
+            out.append((norm(previa.replace("\x00", " ") + " " + g), norm(g), a, b, p))
             previa = ""
         cache[p] = out
     return cache[p]
@@ -228,6 +229,12 @@ def main():
         for nombre, cfg in IDENTIDADES.items():
             for col in ("actual", "anterior"):
                 ts = [termino(n, col) for n in cfg["terminos"]]
+                # Fondo que nace en el anio: el ESF trae comparativo a la fecha de inicio
+                # ("20-03-2012") y el EFE no tiene columna anterior (saldo final 0 en PDF y XML).
+                # La identidad no aplica (revision 03c: 3 de 3 casos asi).
+                if (nombre == "efectivo_esf_efe" and col == "anterior" and ts[1] is not None
+                        and not ts[1]["pdf"] and not ts[1]["xml"]):
+                    continue
                 if any(v is None for v in ts):
                     continue
                 pdf = [v["pdf"] for v in ts]
@@ -275,7 +282,7 @@ def main():
     pe = nc[nc["clase"].str.startswith("probable_error")]
     print(f"\nprobable_error* ({len(pe)}; {int((~pe['ya_en_03b']).sum())} que el 03b no ve):")
     for f in pe.sort_values(["clase", "identidad", "rut", "anio"]).itertuples():
-        print(f"  {f.rut} {f.anio} {f.identidad:<22} {f.columna:<8} {f.clase[15:]:<6} dif={f.dif_pdf:>14,.0f} "
+        print(f"  {f.rut} {f.anio} {f.identidad:<22} {f.columna:<8} {f.clase[15:]:<6} dif={(f.dif_xml if f.clase == 'probable_error_xml' else f.dif_pdf):>14,.0f} "
               f"distinto={f.terminos_distintos_xml or '-'}  pag {f.paginas}{'  (ya en 03b)' if f.ya_en_03b else ''}")
     print(f"\nsalida: {DIR_PROC / 'identidades.csv'}")
     return 0

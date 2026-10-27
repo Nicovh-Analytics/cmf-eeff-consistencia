@@ -1,4 +1,4 @@
-"""Revision manual asistida de una planilla de casos del 03b.
+"""Revision manual asistida de una planilla de casos del 03b o del 03c.
 
 Uso (desde la raiz del repo):
     python run.py --revisar verificacion/muestra_03b_esf_eri.xlsx     (si lo agregas a run.py)
@@ -7,7 +7,9 @@ Uso (desde la raiz del repo):
 
 Por cada fila sin veredicto:
   1. abre el PDF del caso en la pagina del subtotal (Edge, que respeta #page=N);
-  2. muestra lo que leyo el 03b: subtotal impreso, suma de lineas, XML y detalle;
+     en planillas del 03c (columna "identidad"), una pestana por cada pagina involucrada;
+  2. muestra lo que leyo el 03b (subtotal impreso, suma de lineas, XML y detalle) o,
+     en el 03c, cada termino de la identidad en PDF y XML lado a lado;
   3. pide el veredicto con una tecla y una nota opcional.
 Guarda la planilla despues de CADA respuesta: se puede cortar con q y retomar.
 Solo escribe las columnas veredicto / doc_con_error / nota de la planilla.
@@ -74,11 +76,33 @@ def main():
     pdfs = {(r.rut, int(r.anio)): r.pdf for r in res.itertuples() if isinstance(r.pdf, str)}
 
     # XML: solo las cuentas sin serie de los fondos de la planilla (se lee una vez)
-    subtotales = cargar_subtotales()
-    cta = pd.read_csv(CMF_HOME / "procesado" / "cuentas.csv", dtype={"rut": str, "serie": str},
-                      usecols=["rut", "anio", "contexto", "codigo", "serie", "valor"])
-    cta = cta[cta["serie"].isna() & cta["rut"].isin(set(df["rut"]))]
-    xml = {(r.rut, int(r.anio), r.contexto, r.codigo): r.valor for r in cta.itertuples()}
+    modo_03c = "identidad" in df.columns     # la planilla ya trae PDF y XML por termino
+    subtotales, xml = {}, {}
+    if not modo_03c:
+        subtotales = cargar_subtotales()
+        cta = pd.read_csv(CMF_HOME / "procesado" / "cuentas.csv", dtype={"rut": str, "serie": str},
+                          usecols=["rut", "anio", "contexto", "codigo", "serie", "valor"])
+        cta = cta[cta["serie"].isna() & cta["rut"].isin(set(df["rut"]))]
+        xml = {(r.rut, int(r.anio), r.contexto, r.codigo): r.valor for r in cta.itertuples()}
+
+    def terminos(texto):
+        """'total_activo=123 | activo_neto=45.0' -> {'total_activo': 123.0, ...}"""
+        out = {}
+        for t in str(texto).split(" | "):
+            if "=" in t:
+                k, v = t.rsplit("=", 1)
+                out[k.strip()] = float(v) if v.strip() not in ("", "None", "nan") else None
+        return out
+
+    def mostrar_03c(r):
+        distintos = set(str(r.get("terminos_distintos_xml", "")).split(","))
+        print(f"  dif PDF {monto(r.get('dif_pdf'))} | dif XML {monto(r.get('dif_xml'))}"
+              f"   (cuadra_pdf={r.get('cuadra_pdf')}, cuadra_xml={r.get('cuadra_xml')})")
+        print(f"     {'termino':<22} {'PDF':>16} {'XML':>16}")
+        tp, tx = terminos(r.get("pdf")), terminos(r.get("xml"))
+        for k in tp:
+            marca = "  <- distinto" if k in distintos else ""
+            print(f"     {k:<22} {monto(tp[k]):>16} {monto(tx.get(k)):>16}{marca}")
 
     def mostrar_xml(rut, anio, subtotal, columna):
         cfg = subtotales.get(subtotal)
@@ -108,19 +132,30 @@ def main():
         i = casos[pos]
         r = df.loc[i]
         anio = int(r["anio"])
-        print(f"\n[{pos + 1}/{len(casos)}] {r['rut']} {anio}  {r.get('subtotal', '')} ({r.get('columna', '')})"
-              f"  pag. {r.get('pagina', '?')}  [{r.get('clase', '')}, {r.get('patron', '')}]")
-        print(f"  impreso {monto(r.get('subtotal_pdf'))} | suma lineas {monto(r.get('suma_lineas_pdf'))}"
-              f" | XML {monto(r.get('subtotal_xml'))} | dif {monto(r.get('dif'))}")
-        print("   PDF (lineas sumadas):")
-        for linea in str(r.get("detalle", "")).split(" | "):
-            print("     ", linea)
-        mostrar_xml(r["rut"], anio, r.get("subtotal"), r.get("columna"))
+        if modo_03c:
+            print(f"\n[{pos + 1}/{len(casos)}] {r['rut']} {anio}  {r['identidad']} ({r['columna']})"
+                  f"  pag. {r.get('paginas', '?')}  [{r.get('estrato', '')} {r.get('clase', '')}]")
+            mostrar_03c(r)
+        else:
+            print(f"\n[{pos + 1}/{len(casos)}] {r['rut']} {anio}  {r.get('subtotal', '')} ({r.get('columna', '')})"
+                  f"  pag. {r.get('pagina', '?')}  [{r.get('clase', '')}, {r.get('patron', '')}]")
+            print(f"  impreso {monto(r.get('subtotal_pdf'))} | suma lineas {monto(r.get('suma_lineas_pdf'))}"
+                  f" | XML {monto(r.get('subtotal_xml'))} | dif {monto(r.get('dif'))}")
+            print("   PDF (lineas sumadas):")
+            for linea in str(r.get("detalle", "")).split(" | "):
+                print("     ", linea)
+            mostrar_xml(r["rut"], anio, r.get("subtotal"), r.get("columna"))
         if r["veredicto"].strip():
             print(f"  ya revisado: {r['veredicto']}  |  nota: {r['nota'] or '-'}")
 
         pdf = ruta_pdf(r["rut"], anio)
-        abrir_pdf(pdf, r.get("pagina")) if pdf else print("  (sin PDF en cruce_resumen)")
+        if not pdf:
+            print("  (sin PDF en cruce_resumen)")
+        elif modo_03c:
+            for p in str(r.get("paginas", "")).split(","):     # ESF y EFE pueden estar en paginas distintas
+                abrir_pdf(pdf, int(p) if p.strip().isdigit() else None)
+        else:
+            abrir_pdf(pdf, r.get("pagina"))
 
         while True:
             k = input("  veredicto> ").strip().lower()
