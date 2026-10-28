@@ -130,7 +130,9 @@ IDENTIDADES = {
          (1, "EFE:FlujoNetoOriginadoPorActividadesDeFinanciamiento")]),
     "EFE inicial + aumento + dif.cambio = final": ("EFE:SaldoFinalDeEfectivoYEfectivoEquivalente",
         [(1, "EFE:SaldoInicialDeEfectivoYEfectivoEquivalente"),
-         (1, "EFE:AumentoNetoDeEfectivoYEfectivoEquivalente"),
+         # metodo indirecto (76 XML 2011-2015): otro codigo, y el asignador de estado lo deja en ECP/ESF
+         (1, "EFE:AumentoNetoDeEfectivoYEfectivoEquivalente|EFE:AumentoDisminucionNetoDeEfectivoYEfectivoEquivalente"
+             "|ECP:AumentoDisminucionNetoDeEfectivoYEfectivoEquivalente|ESF:AumentoDisminucionNetoDeEfectivoYEfectivoEquivalente"),
          (1, "EFE:DiferenciasDeCambioNetasSobreEfectivoYEfectivoEquivalente")]),
     "cruce ESF activo neto = ECP cierre": ("ESF:ActivoNetoAtribuibleALosParticipes",
         [(1, "ECP:ActivoNetoAtribuibleAParticipesAl31DeDiciembreValorCuota")]),
@@ -150,12 +152,26 @@ def chequeo_identidades(cta):
     w = tot.assign(col=tot["estado"] + ":" + tot["codigo"]).pivot_table(
         index=["archivo", "contexto"], columns="col", values="valor", aggfunc="first")
     filas = []
+    def columna(cod):
+        """'A|B' -> valor de A; si falta, el de B (codigos alternativos por plantilla)."""
+        alts = [a for a in cod.split("|") if a in w]
+        if not alts:
+            return None
+        v = w[alts[0]]
+        for a in alts[1:]:
+            v = v.fillna(w[a])
+        return v
+
     for nombre, (total, partes) in IDENTIDADES.items():
-        if total not in w:
+        t = columna(total)
+        if t is None:
             continue
-        presentes = w[total].notna()            # se evalua solo si el total esta informado
-        rhs = sum(sg * w[c].fillna(0) if c in w else 0 for sg, c in partes)
-        d = pd.DataFrame({"identidad": nombre, "total": w[total], "suma_partes": rhs})[presentes]
+        presentes = t.notna()                   # se evalua solo si el total esta informado
+        rhs = 0
+        for sg, c in partes:
+            v = columna(c)
+            rhs = rhs + (sg * v.fillna(0) if v is not None else 0)
+        d = pd.DataFrame({"identidad": nombre, "total": t, "suma_partes": rhs})[presentes]
         filas.append(d)
 
     # Suma de series del cierre = cierre total (ECP)

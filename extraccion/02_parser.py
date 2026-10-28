@@ -215,6 +215,7 @@ def main():
     DIR_SALIDA.mkdir(parents=True, exist_ok=True)
     # utf-8-sig: Excel en Windows reconoce los tildes sin pelear.
     df_enc.to_csv(DIR_SALIDA / "encabezados.csv", index=False, encoding="utf-8-sig")
+    df_cta["codigo"] = df_cta["codigo"].str.strip()   # 76 XML 2011-2015 traen "SaldoFinalDeEfectivoYEfectivoEquivalente " (espacio final)
     df_cta.to_csv(DIR_SALIDA / "cuentas.csv", index=False, encoding="utf-8-sig")
 
     # --- Resumen para revisar a ojo ---
