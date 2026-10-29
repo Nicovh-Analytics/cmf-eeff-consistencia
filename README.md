@@ -97,7 +97,7 @@ El ECP trae una columna por serie más una de total, y cada período en su propi
 
 Lo que encontró, verificado a mano:
 
-- **Rótulo incorrecto en 16 fondos:** la fila "aumento neto originado por transacciones de cuotas" muestra inicio + aportes − rescates, es decir, el saldo acumulado con el rótulo del aumento neto. El cierre está bien. Se repite año tras año en el mismo fondo y en fondos correlativos de una misma administradora: es la plantilla, no un tipeo.
+- **Rótulo incorrecto en 16 fondos:** la fila "aumento neto originado por transacciones de cuotas" muestra inicio + aportes − rescates, es decir, el saldo acumulado con el rótulo del aumento neto. El cierre está bien. Se repite año tras año en el mismo fondo y en fondos correlativos de una misma administradora: es la plantilla, no un tipeo. El cruce espejo (04) ya marcaba parte del patrón como pista (20 fondo-año con subtipo «rótulo incorrecto», solo cuando el saldo acumulado quedaba como cifra huérfana); el 03d lo encuentra en 42 fondo-año, 28 de ellos no marcados por el 04.
 - **Cifras de series mal impresas:** un monto de una serie no cuadra ni con su columna ni con la suma de su fila, por un dígito o dos dígitos traspuestos (15 de 15 confirmados).
 - **Saldo inicial distinto del cierre del año anterior en el mismo documento**, en PDF y XML a la vez (6 casos). En uno, una nota explica que se sumó al saldo inicial el patrimonio de un fondo absorbido en marzo, cuando debió presentarse como movimiento del período; el comparativo del año anterior no se reexpresó.
 - **Otros 7 casos donde solo falla el XML** (el PDF es consistente), siempre en el arrastre del año anterior.
@@ -164,7 +164,7 @@ Cada etapa que marca casos se contrastó con revisión manual del PDF original:
 
 ## Hallazgos de método
 
-**1. El cruce por números tiene un punto ciego.** Buscar cada cifra del XML en el PDF no detecta un error si el valor equivocado coincide con otra cifra del documento, porque no queda ningún monto huérfano. Por eso el 03b no busca cifras: **reconstruye cada estado y verifica que sume**. Medido: de 69 fondo-año con error estructural en el PDF, **34 no aparecen** entre los candidatos del cruce espejo. Lo mismo con el 03c: de 39 fondo-año con una identidad rota en el PDF, **29 no son candidatos** del cruce espejo; y de 29 con la identidad rota solo en el XML, 19 tampoco.
+**1. El cruce por números tiene un punto ciego.** Buscar cada cifra del XML en el PDF no detecta un error si el valor equivocado coincide con otra cifra del documento, porque no queda ningún monto huérfano. Por eso el 03b no busca cifras: **reconstruye cada estado y verifica que sume**. Medido: de 69 fondo-año con error estructural en el PDF, **34 no aparecen** entre los candidatos del cruce espejo. Lo mismo con el 03c: de 39 fondo-año con una identidad rota en el PDF, **29 no son candidatos** del cruce espejo; y de 29 con la identidad rota solo en el XML, 19 tampoco. Y con el 03d: de 57 fondo-año con error del PDF en el ECP, **37 no son candidatos** del cruce espejo.
 
 **2. Leer el PDF por posición, no por texto.** La primera versión del 03b leía el texto extraído y acumuló reglas por cada plantilla de AGF: números de nota, montos partidos por la extracción, negrita simulada, glosas en dos líneas. Además usaba el XML para decidir cómo leer el PDF, y **auditar un documento usando como árbitro al documento auditado sesga el resultado**. La versión final usa la geometría de la página:
 

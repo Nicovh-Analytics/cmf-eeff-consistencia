@@ -46,10 +46,34 @@ def franjas_multi(nums, ancho):
     return [sorted(g)[len(g) // 2] for g in grupos if len(g) >= MIN_FRANJA]
 
 
+RE_INCOMPLETO = re.compile(r"\(?[-−–—]?\d{1,3}(?:\.\d{3})*\.\d{1,2}")    # "(5.250.38": ultimo grupo corto
+RE_RESTO = re.compile(r"\d{1,2}\)?")                                    # "9)" en la linea de abajo
+
+
+def _unir_cortados(nums):
+    """Monto que no cabe en la celda: los ultimos digitos bajan a la linea siguiente con el
+    mismo borde derecho ("(5.250.38" / "9)"). Un monto normal termina en un grupo de 3."""
+    usados, out = set(), []
+    for i, w in enumerate(nums):
+        if i in usados:
+            continue
+        if RE_INCOMPLETO.fullmatch(w[0]):
+            j = next((j for j, o in enumerate(nums) if j != i and j not in usados and RE_RESTO.fullmatch(o[0])
+                      and abs(o[2] - w[2]) <= 3 and 3 <= o[3] - w[3] <= 14), None)
+            if j is not None:
+                o = nums[j]
+                usados.add(j)
+                out.append([w[0] + o[0], w[1], max(w[2], o[2]), o[3], o[4]])   # queda en la linea de abajo
+                continue
+        out.append(w)
+    return out
+
+
 def filas_multicolumna(pagina):
     palabras, ancho = pagina["palabras"], pagina["ancho"]
     es_num = lambda t: bool(RE_NUMTOK.match(t)) and not RE_FECHA_NUM.match(t)
     nums = _unir_tocandose([w for w in palabras if es_num(w[0])])
+    nums = _unir_cortados(nums)
     # Los anios van como texto (no son montos): sirven para fechar cada bloque
     textos = [w for w in palabras if not es_num(w[0]) or re.fullmatch(r"\(?(19|20)\d\d\)?", w[0])]
     # Plantillas con digitos sueltos ("2 0 2 2"): el anio solo aparece al unirlos

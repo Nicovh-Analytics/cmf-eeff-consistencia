@@ -459,6 +459,33 @@ def main():
             print(f"  {nombre}: {len(fa)}; {en_ambos} tambien son candidatos del 04; {len(fa) - en_ambos} solo los ve el 03c")
         columnas.append("error_identidad_03c")
 
+    # Cruce con el 03d: ECP leido desde el PDF (un resumen por fondo-anio: clases y chequeos)
+    ruta_03d = DIR_PROC / "ecp_no_cuadra.csv"
+    if ruta_03d.exists():
+        e5 = pd.read_csv(ruta_03d, dtype={"rut": str})
+        e5 = e5[e5["clase"].str.startswith("probable_error")]
+        r5 = (e5.groupby(["rut", "anio"])
+                .apply(lambda g: "; ".join(sorted({f"{c[15:]}:{ch}" for c, ch in zip(g["clase"], g["chequeo"])})))
+                .rename("error_ecp_03d").reset_index())
+        cand = cand.merge(r5, on=["rut", "anio"], how="left")
+        claves = set(zip(cand["rut"], cand["anio"]))
+        print("cruce con 03d (fondo-anio):")
+        for nombre, clases in (("rotulo", ["probable_error_rotulo"]),
+                               ("error en PDF", ["probable_error_pdf", "probable_error_ambos"]),
+                               ("error en XML", ["probable_error_xml"])):
+            sub = e5[e5["clase"].isin(clases)]
+            fa = set(zip(sub["rut"], sub["anio"]))
+            en_ambos = len(fa & claves)
+            print(f"  {nombre}: {len(fa)}; {en_ambos} tambien son candidatos del 04; {len(fa) - en_ambos} solo los ve el 03d")
+        # El 04 ya tiene un subtipo para la fila de saldo acumulado del ECP: cuanto coincide?
+        rot_04 = set(zip(cand.loc[cand["subtipo_probable"] == "rotulo_incorrecto", "rut"],
+                         cand.loc[cand["subtipo_probable"] == "rotulo_incorrecto", "anio"]))
+        rot_03d = set(zip(e5.loc[e5["clase"] == "probable_error_rotulo", "rut"],
+                          e5.loc[e5["clase"] == "probable_error_rotulo", "anio"]))
+        print(f"  rotulo_incorrecto del 04: {len(rot_04)} fondo-anio; en ambos: {len(rot_04 & rot_03d)}; "
+              f"solo 04: {len(rot_04 - rot_03d)}; solo 03d: {len(rot_03d - rot_04)}")
+        columnas.append("error_ecp_03d")
+
     cand[columnas].to_csv(DIR_PROC / "candidatos.csv", index=False, encoding="utf-8-sig")
 
     # --- Por AGF, como tasa ---
