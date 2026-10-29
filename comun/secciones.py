@@ -38,7 +38,18 @@ ANCLAS = {
         OtrosIngresosDeOperacion OtrosGastosDeOperacionPagados FlujoNetoOriginadoPorActividadesDeLaOperacion
         ColocacionDeCuotasEnCirculacion RescatesDeCuotasEnCirculacion Otros
         FlujoNetoOriginadoPorActividadesDeFinanciamiento AumentoNetoDeEfectivoYEfectivoEquivalente
-        SaldoInicialDeEfectivoYEfectivoEquivalente SaldoFinalDeEfectivoYEfectivoEquivalente""",
+        SaldoInicialDeEfectivoYEfectivoEquivalente SaldoFinalDeEfectivoYEfectivoEquivalente
+        AumentoDisminucionDelActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeLaDistribucionDeBeneficios
+        AjustesPorInteresesDiferenciasDeCambioYReajustesDevengadosNoRealizados AjustesPorIngresosPorDividendosNoRealizados
+        AjustesPorDiferenciasDeCambioNoRealizadasSobreEfectivoYEfectivoEquivalente
+        AjustesPorOtrasVariacionesDeResultadosNoRealizadas SubtotalAjustes
+        AumentoNetoDeActivosFinancierosAValorRazonableConEfectoEnResultados
+        AumentoNetoDePasivosFinancierosAValorRazonableConEfectoEnResultados AumentoNetoDeOtrosDeudoresYAcreedores
+        AumentoDisminucionNetaDeCuentasPorPagarCobrarAIntermediarios
+        AumentoDisminucionNetaDeCuentasPorPagarCobrarALaSociedadAdministradora
+        SubtotalEfectivoUtilizadoEnOperaciones FlujoNetoUtilizadoEnActividadesDeLaOperacion
+        RescateDeCuotasEnCirculacion DistribucionesPagadasAParticipes FlujoNetoUtilizadoPorActividadesDeFinanciamiento
+        AumentoDisminucionNetoDeEfectivoYEfectivoEquivalente""",
 }
 SECCION_DE = {c: est for est, txt in ANCLAS.items() for c in txt.split()}
 

@@ -28,6 +28,7 @@ Nadie verifica de forma sistemática que digan lo mismo. Tampoco que el "año an
 | 3o | `03a_ocr.py` + `ocr.py` | OCR (Tesseract) de las páginas de estados publicadas como imagen, con el mismo formato de coordenadas. |
 | 3b | `03b_estructura.py` + `lector_espacial.py` | **Estructura:** reconstruye EFE, ESF y ERI desde el PDF y verifica que cada subtotal sea la suma de sus líneas. |
 | 3c | `03c_identidades.py` | **Identidades entre estados:** activo − pasivo = activo neto, ingresos − gastos = utilidad, efectivo del ESF = saldo final del EFE. |
+| 3d | `03d_ecp.py` + `lector_multicolumna.py` | **Estado de cambios en el activo neto (ECP):** lo lee desde el PDF con una columna por serie y verifica cada serie, el total y su cruce con el ESF y con el año anterior. |
 | 4 | `04_candidatos.py` | Tipifica las discrepancias del cruce (redistribución entre series, signo invertido, rótulo, agregación), les asigna gravedad y aplica materialidad. |
 | 6 | `06_ficha.py` | Ficha Excel por caso: XML, PDF y año anterior, lado a lado, para revisión manual. |
 | 7 | `07_continuidad.py` | **Continuidad:** compara el comparativo de cada año con el original del año anterior, el arrastre de saldos y las identidades contables dentro del XML. |
@@ -84,6 +85,23 @@ Los errores del PDF son de cuatro tipos: un dígito distinto en la utilidad (rep
 
 Las 22 inconsistencias del XML están en la columna del año anterior: el efectivo o el saldo final del comparativo no coincide con lo que el mismo fondo informó el año previo, mientras el otro término sí, y el PDF del mismo envío es consistente. Hay errores de escala (÷1.000), cifras ajenas en el saldo final y dígitos cambiados. El documento que lee una persona está bien; el que procesan los sistemas, no.
 
+### Estado de cambios en el activo neto leído desde el PDF (03d)
+
+El ECP trae una columna por serie más una de total, y cada período en su propio bloque, a veces con series distintas entre años. Se lee por posición y se verifica **por columna, sin el XML y sin emparejar los nombres de las series**: aportes − rescates = aumento neto, inicio + aumento neto + resultado − distribución = cierre, y que las series sumen la columna Total. Con el total se cruzan el activo neto del ESF y el cierre del bloque del año anterior. El XML solo se usa como tercer punto, en la columna Total.
+
+| | |
+|---|---|
+| fondo-año con el bloque del año leído | 86,5% (año anterior: 82,9%) |
+| chequeos de la columna Total que cuadran en el XML | 100% (la lectura asigna bien las filas) |
+| cierre del ECP = activo neto del ESF, en el PDF | 97,1% |
+
+Lo que encontró, verificado a mano:
+
+- **Rótulo incorrecto en 16 fondos:** la fila "aumento neto originado por transacciones de cuotas" muestra inicio + aportes − rescates, es decir, el saldo acumulado con el rótulo del aumento neto. El cierre está bien. Se repite año tras año en el mismo fondo y en fondos correlativos de una misma administradora: es la plantilla, no un tipeo.
+- **Cifras de series mal impresas:** un monto de una serie no cuadra ni con su columna ni con la suma de su fila, por un dígito o dos dígitos traspuestos (15 de 15 confirmados).
+- **Saldo inicial distinto del cierre del año anterior en el mismo documento**, en PDF y XML a la vez (6 casos). En uno, una nota explica que se sumó al saldo inicial el patrimonio de un fondo absorbido en marzo, cuando debió presentarse como movimiento del período; el comparativo del año anterior no se reexpresó.
+- **Otros 7 casos donde solo falla el XML** (el PDF es consistente), siempre en el arrastre del año anterior.
+
 ### Cruce espejo XML ↔ PDF (03, 04)
 
 | | fondo-año |
@@ -107,11 +125,11 @@ Para cada par de años consecutivos, el comparativo que presenta el año *t* se 
 
 | comparativo vs original | fondo-año |
 |---|---|
-| idéntico | 3.286 |
+| idéntico | 3.289 |
 | modificado | 518 |
-| diferencia menor | 158 |
+| diferencia menor | 159 |
 | saldos modificados | 69 |
-| incompleto / subtotal vacío | 48 |
+| incompleto / subtotal vacío | 44 |
 
 Además, 153 fondo-año tienen al menos una identidad contable rota **dentro del mismo XML** (por ejemplo, una suma de líneas que no da el total).
 Además, **3 XML repiten íntegramente las cifras del año anterior**, con el período nuevo declarado: el 100% de sus cuentas es idéntico al XML previo (más 1 caso parcial, con 80%). En el resto del universo, ningún fondo-año supera el 25% de cuentas iguales. El cruce espejo no los detectaba, porque las cifras están en el PDF, pero en la columna del comparativo.
@@ -133,6 +151,11 @@ Cada etapa que marca casos se contrastó con revisión manual del PDF original:
 | 03c, errores del PDF que el 03b no ve | 19/19² (población completa) |
 | 03c, inconsistencias del XML | 22/22 (población completa); en 21, un solo término difiere del XML del año anterior |
 | 03c, no detección | errores reales escondidos en la clase de lectura: 0/10 |
+| 03d, errores en la columna Total | 20/25 (los 5 restantes: dígito final impreso en la línea de abajo, fila leída de la línea vecina) |
+| 03d, tipeo en una serie | 15/15 |
+| 03d, rótulo incorrecto | 16/17 fondos |
+| 03d, continuidad (PDF y XML, o solo XML) | 13/13 |
+| 03d, no detección | 2 errores reales en 10 casos de lectura; uno de ellos ya estaba marcado por otro chequeo del mismo fondo-año |
 
 ¹ Esa muestra (37 casos) también se usó para corregir el lector: 16 eran lectura nuestra, por 4 causas que se corrigieron. La cifra es en muestra.
 
@@ -153,14 +176,14 @@ Con eso, el ruido de lectura cayó a la mitad y la ubicación de subtotales subi
 
 **3. Que cuadre no significa que se leyó bien.** En 2011, primer año con NIIF, el estado de situación trae tres columnas: el año, el anterior y el balance de apertura. El lector tomaba las dos de la derecha (anterior y apertura) y, como cada columna suma por sí sola, el 03b no veía nada raro; además, al no coincidir con el XML, la búsqueda del total seguía hasta una nota de transición con cifras parecidas. Lo destapó el 03c, porque el efectivo del ESF dejaba de calzar con el EFE en un solo año. Corregido el lector (se reconoce la fila de fechas "2011 · 2010 · 2010"), las diferencias del ESF contra el XML en el 03b bajaron a la mitad.
 
-**4. Un patrón limpio en el tiempo también puede ser nuestro.** El cruce efectivo ESF = saldo final EFE del XML fallaba en la columna actual entre 2011 y 2015 (12 a 20 casos por año) y nunca desde 2016: parecía el año en que el regulador empezó a validarlo. Al contar cuántos XML traían el código del saldo final, faltaban exactamente esos casos. 76 XML de esos años escriben el código con un espacio al final (`SaldoFinalDeEfectivoYEfectivoEquivalente `), el parser no lo reconocía y la identidad comparaba contra un saldo vacío. Se corrige limpiando los códigos al leer el XML. Corregido eso, apareció una segunda capa: esos mismos 76 XML presentan el flujo de efectivo por método indirecto, con su propia taxonomía (el aumento neto de efectivo tiene otro código), y la identidad del EFE fallaba porque tomaba como cero el término que no encontraba. Antes de atribuir un patrón a una política, hay que descartar que sea un cambio de formato de los datos.
+**4. Un patrón limpio en el tiempo también puede ser nuestro.** El cruce efectivo ESF = saldo final EFE del XML fallaba en la columna actual entre 2011 y 2015 (12 a 20 casos por año) y nunca desde 2016: parecía el año en que el regulador empezó a validarlo. Al contar cuántos XML traían el código del saldo final, faltaban exactamente esos casos. 76 XML de esos años escriben el código con un espacio al final (`SaldoFinalDeEfectivoYEfectivoEquivalente `), el parser no lo reconocía y la identidad comparaba contra un saldo vacío. Se corrige limpiando los códigos al leer el XML. Corregido eso, apareció una segunda capa: esos mismos 76 XML presentan el flujo de efectivo por método indirecto, con su propia taxonomía: el aumento neto y los flujos netos tienen otros códigos, que además el asignador de estados no reconocía como del EFE. La identidad del EFE fallaba porque tomaba como cero el término que no encontraba. Con ambas plantillas reconocidas, las identidades del EFE se evalúan en los 4.512 XML y no fallan en ninguno. Antes de atribuir un patrón a una política, hay que descartar que sea un cambio de formato de los datos.
 
 **5. Materialidad.** Como en una auditoría real, las diferencias iguales o menores a un umbral se registran como observación pero no se revisan: 100 en fondos en pesos (montos en M$) y 1 en fondos en otra moneda. Es una sola definición (`config.py`) que usan el cruce espejo (04), la estructura (03b) y las identidades (03c).
 
 ## Limitaciones
 
 - **PDF escaneados:** se leen con OCR (Tesseract). El 10% de los subtotales escaneados que no cuadra se trata como lectura, nunca como error, así que en esos documentos el método puede no ver un error real.
-- **El ECP no se lee desde el PDF.** Tiene una columna por serie y requiere otro diseño; por eso las identidades con el ECP (activo neto del ESF = cierre del ECP, resultado del ERI = resultado del ECP) se verifican solo en el XML (07).
+- **ECP:** se lee el 86,5% de los fondo-año. Las series no se comparan con el XML una a una (sus nombres no coinciden entre documentos); una serie mal impresa se detecta solo cuando rompe a la vez su columna y la suma de su fila.
 - **2011:** algunas plantillas del primer año NIIF tienen un encabezado que el lector aún no reconoce; esos casos quedan como lectura, no como error.
 - **Solo fondos vigentes** (sesgo de supervivencia) y **solo el último envío** de cada fondo-año (los reenvíos no son observables).
 - **El cruce detecta desacuerdo, no culpa.** Cuál de los dos documentos tiene el error se determina caso a caso, en revisión manual.
@@ -191,10 +214,10 @@ run.py                      orquestador del pipeline
 config.py                   rutas y parámetros compartidos (materialidad)
 extraccion/                 01 descarga, 02 parser del XML
 validaciones/fidelidad/     03 cruce espejo, 03a coordenadas, 03a_ocr
-validaciones/estructura/    03b subtotales, 03c identidades entre estados
+validaciones/estructura/    03b subtotales, 03c identidades entre estados, 03d ECP
 validaciones/continuidad/   07 comparativo vs año anterior
 consolidacion/              04 candidatos, 06 ficha de revisión
-comun/                      lector_espacial (lectura por coordenadas), ocr
+comun/                      lector_espacial y lector_multicolumna (lectura por coordenadas), ocr, secciones
 herramientas/               diag_coords, revisar (revisión manual asistida), muestra_04
 docs/decisiones.md          registro de decisiones y casos
 ```

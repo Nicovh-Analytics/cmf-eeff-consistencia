@@ -15,6 +15,7 @@ Guarda la planilla despues de CADA respuesta: se puede cortar con q y retomar.
 Solo escribe las columnas veredicto / doc_con_error / nota de la planilla.
 """
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -74,10 +75,28 @@ def main():
     res = pd.read_csv(CMF_HOME / "procesado" / "cruce_resumen.csv",
                       dtype={"rut": str}, usecols=["rut", "anio", "pdf"])
     pdfs = {(r.rut, int(r.anio)): r.pdf for r in res.itertuples() if isinstance(r.pdf, str)}
+    enc = pd.read_csv(CMF_HOME / "procesado" / "encabezados.csv", dtype={"rut": str},
+                      usecols=["rut", "anio", "archivo", "es_ultimo_envio"])
+    xmls = {(r.rut, int(r.anio)): r.archivo for r in enc[enc["es_ultimo_envio"]].itertuples()}
 
     # XML: solo las cuentas sin serie de los fondos de la planilla (se lee una vez)
-    modo_03c = "identidad" in df.columns     # la planilla ya trae PDF y XML por termino
+    modo_03c = "identidad" in df.columns or "chequeo" in df.columns   # 03c/03d: PDF y XML por termino
+    modo_03d = "chequeo" in df.columns
     subtotales, xml = {}, {}
+    # 03d: cifras por serie del XML, para los casos de serie (el 03d no empareja nombres de series)
+    ECP = {"inicio": "ActivoNetoAtribuibleALosParticipesAl01DeEnero", "aportes": "AportesDeCuotas",
+           "rescates": "RescateDeCuotas", "neto": "AumentoNetoOriginadoPorTransaccionesDeCuotas",
+           "res_antes": "AumentoDisminucionDelActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios",
+           "res_despues": "AumentoDisminucionDelActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios",
+           "cierre": "ActivoNetoAtribuibleAParticipesAl31DeDiciembreValorCuota"}
+    xml_serie = {}
+    if modo_03d:
+        cs = pd.read_csv(CMF_HOME / "procesado" / "cuentas.csv", dtype={"rut": str, "serie": str},
+                         usecols=["rut", "anio", "contexto", "codigo", "serie", "valor"])
+        cs = cs[cs["serie"].notna() & cs["rut"].isin(set(df["rut"]))
+                & cs["codigo"].isin({c + "PorSerie" for c in ECP.values()})]
+        for r_ in cs.itertuples():
+            xml_serie.setdefault((r_.rut, int(r_.anio), r_.contexto, r_.codigo), []).append((r_.serie, r_.valor))
     if not modo_03c:
         subtotales = cargar_subtotales()
         cta = pd.read_csv(CMF_HOME / "procesado" / "cuentas.csv", dtype={"rut": str, "serie": str},
@@ -94,10 +113,26 @@ def main():
                 out[k.strip()] = float(v) if v.strip() not in ("", "None", "nan") else None
         return out
 
+    def mostrar_series(r):
+        """Valores por serie del XML para la fila del caso, marcando el impreso y el esperado."""
+        det = str(r.get("detalle", ""))
+        m = re.search(r"celda (\w+)/serie_\d+: impreso (-?[\d,]+), cuadraria con (-?[\d,]+)", det)
+        fila = m.group(1) if m else next(iter(terminos(r.get("pdf"))), None)
+        if fila not in ECP:
+            return
+        imp, esp = (float(m.group(i).replace(",", "")) for i in (2, 3)) if m else (None, None)
+        ctx = "PeriodoActual" if r["columna"] == "actual" else "PeriodoAnterior"
+        vals = xml_serie.get((r["rut"], int(r["anio"]), ctx, ECP[fila] + "PorSerie"), [])
+        print(f"   XML por serie, fila '{fila}' ({ctx}):" + ("" if vals else " (sin datos por serie)"))
+        for serie, v in vals:
+            marca = ("  <- igual al impreso" if imp is not None and abs(abs(v) - abs(imp)) <= 2 else
+                     "  <- igual al que cuadraria" if esp is not None and abs(abs(v) - abs(esp)) <= 2 else "")
+            print(f"      {serie:<20} {monto(v):>16}{marca}")
+
     def mostrar_03c(r):
-        distintos = set(str(r.get("terminos_distintos_xml", "")).split(","))
-        print(f"  dif PDF {monto(r.get('dif_pdf'))} | dif XML {monto(r.get('dif_xml'))}"
-              f"   (cuadra_pdf={r.get('cuadra_pdf')}, cuadra_xml={r.get('cuadra_xml')})")
+        distintos = set(str(r.get("terminos_distintos_xml", r.get("distintos", ""))).split(","))
+        print(f"  dif PDF {monto(r.get('dif_pdf', r.get('dif')))} | dif XML {monto(r.get('dif_xml'))}"
+              f"   (cuadra_pdf={r.get('cuadra_pdf', r.get('cuadra'))}, cuadra_xml={r.get('cuadra_xml')})")
         print(f"     {'termino':<22} {'PDF':>16} {'XML':>16}")
         tp, tx = terminos(r.get("pdf")), terminos(r.get("xml"))
         for k in tp:
@@ -116,6 +151,10 @@ def main():
                 print(f"      {c[:45]:<45} {monto(v):>16}")
         print(f"      {'= ' + cfg['codigo'][:43]:<45} {monto(xml.get((rut, anio, ctx, cfg['codigo']))):>16}")
 
+    def ruta_xml(rut, anio):
+        nombre = xmls.get((rut, anio))
+        return CMF_HOME / "archivos" / rut / str(anio) / nombre if nombre else None
+
     def ruta_pdf(rut, anio):
         nombre = pdfs.get((rut, anio))
         return CMF_HOME / "archivos" / rut / str(anio) / nombre if nombre else None
@@ -124,7 +163,7 @@ def main():
     casos = list(df.index) if todos else list(df.index[df["veredicto"].str.strip() == ""])
     print(f"{len(casos)} casos {'(todos)' if todos else 'pendientes'} de {len(df)}.\n  Teclas: "
           + ", ".join(f"{k}={v}" for k, v in VEREDICTOS.items())
-          + "\n  a=PDF anio anterior, f=PDF anio siguiente, b=volver al caso anterior,"
+          + "\n  v=ver XML del envio, a=PDF anio anterior, f=PDF anio siguiente, b=volver al caso anterior,"
             " s=saltar, q=guardar y salir")
 
     pos = 0
@@ -133,9 +172,14 @@ def main():
         r = df.loc[i]
         anio = int(r["anio"])
         if modo_03c:
-            print(f"\n[{pos + 1}/{len(casos)}] {r['rut']} {anio}  {r['identidad']} ({r['columna']})"
-                  f"  pag. {r.get('paginas', '?')}  [{r.get('estrato', '')} {r.get('clase', '')}]")
+            que = r["identidad"] if "identidad" in r else f"ECP {r['chequeo']} / {r['col']}"
+            print(f"\n[{pos + 1}/{len(casos)}] {r['rut']} {anio}  {que} ({r['columna']})"
+                  f"  pag. {r.get('paginas', r.get('pagina', '?'))}  [{r.get('estrato', '')} {r.get('clase', '')}]")
+            if str(r.get("detalle", "")).strip() not in ("", "nan"):
+                print(f"  detalle: {r['detalle']}")
             mostrar_03c(r)
+            if modo_03d and (r["col"] != "total" or r["chequeo"] == "suma_series"):
+                mostrar_series(r)
         else:
             print(f"\n[{pos + 1}/{len(casos)}] {r['rut']} {anio}  {r.get('subtotal', '')} ({r.get('columna', '')})"
                   f"  pag. {r.get('pagina', '?')}  [{r.get('clase', '')}, {r.get('patron', '')}]")
@@ -152,7 +196,7 @@ def main():
         if not pdf:
             print("  (sin PDF en cruce_resumen)")
         elif modo_03c:
-            for p in str(r.get("paginas", "")).split(","):     # ESF y EFE pueden estar en paginas distintas
+            for p in str(r.get("paginas", r.get("pagina", ""))).split(","):     # ESF y EFE pueden estar en paginas distintas
                 abrir_pdf(pdf, int(p) if p.strip().isdigit() else None)
         else:
             abrir_pdf(pdf, r.get("pagina"))
@@ -172,6 +216,12 @@ def main():
                     continue
                 pos -= 1
                 break
+            if k == "v":
+                rx = ruta_xml(r["rut"], anio)
+                abrir_pdf(rx) if rx else print("  (sin XML en encabezados)")   # Edge muestra el XML como arbol
+                if rx:
+                    print("  (en el XML: Ctrl+F con el codigo; PeriodoActual/PeriodoAnterior indican la columna)")
+                continue
             if k in ("a", "f"):
                 otro = anio - 1 if k == "a" else anio + 1
                 ruta = ruta_pdf(r["rut"], otro)

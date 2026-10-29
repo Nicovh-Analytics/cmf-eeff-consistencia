@@ -42,7 +42,7 @@ Lee:      data/procesado/encabezados.csv, cuentas.csv
 Escribe:  data/procesado/continuidad_resumen.csv   1 fila por fondo-anio t
           data/procesado/continuidad_detalle.csv   cifras distintas (A y B)
           data/procesado/continuidad_por_agf.csv   tasas por AGF
-          data/procesado/identidades.csv           fallas de identidades (C)
+          data/procesado/identidades_xml.csv       fallas de identidades (C)
 
 Un comparativo modificado NO es por si solo un error: puede ser una
 reclasificacion revelada (NIC 1.41). Lo que se marca es donde mirar.
@@ -125,14 +125,14 @@ IDENTIDADES = {
         "OtrosGastosDeOperacionPagados")]),
     "EFE suma financiamiento = flujo financ.": ("EFE:FlujoNetoOriginadoPorActividadesDeFinanciamiento",
         [(1, "EFE:" + c) for c in _t("ColocacionDeCuotasEnCirculacion RescatesDeCuotasEnCirculacion Otros")]),
-    "EFE operacion + financ. = aumento neto": ("EFE:AumentoNetoDeEfectivoYEfectivoEquivalente",
-        [(1, "EFE:FlujoNetoOriginadoPorActividadesDeLaOperacion"),
-         (1, "EFE:FlujoNetoOriginadoPorActividadesDeFinanciamiento")]),
+    "EFE operacion + financ. = aumento neto": (
+        "EFE:AumentoNetoDeEfectivoYEfectivoEquivalente|EFE:AumentoDisminucionNetoDeEfectivoYEfectivoEquivalente",
+        [(1, "EFE:FlujoNetoOriginadoPorActividadesDeLaOperacion|EFE:FlujoNetoUtilizadoEnActividadesDeLaOperacion"),
+         (1, "EFE:FlujoNetoOriginadoPorActividadesDeFinanciamiento|EFE:FlujoNetoUtilizadoPorActividadesDeFinanciamiento")]),
     "EFE inicial + aumento + dif.cambio = final": ("EFE:SaldoFinalDeEfectivoYEfectivoEquivalente",
         [(1, "EFE:SaldoInicialDeEfectivoYEfectivoEquivalente"),
-         # metodo indirecto (76 XML 2011-2015): otro codigo, y el asignador de estado lo deja en ECP/ESF
-         (1, "EFE:AumentoNetoDeEfectivoYEfectivoEquivalente|EFE:AumentoDisminucionNetoDeEfectivoYEfectivoEquivalente"
-             "|ECP:AumentoDisminucionNetoDeEfectivoYEfectivoEquivalente|ESF:AumentoDisminucionNetoDeEfectivoYEfectivoEquivalente"),
+         # metodo directo | metodo indirecto (76 XML 2011-2015)
+         (1, "EFE:AumentoNetoDeEfectivoYEfectivoEquivalente|EFE:AumentoDisminucionNetoDeEfectivoYEfectivoEquivalente"),
          (1, "EFE:DiferenciasDeCambioNetasSobreEfectivoYEfectivoEquivalente")]),
     "cruce ESF activo neto = ECP cierre": ("ESF:ActivoNetoAtribuibleALosParticipes",
         [(1, "ECP:ActivoNetoAtribuibleAParticipesAl31DeDiciembreValorCuota")]),
@@ -480,7 +480,7 @@ def main():
     res = resumir(m, pares, renombradas, b, enc, fallas)
     pd.concat([idt, entre])[lambda z: z["falla"]] \
         .merge(enc[["archivo", "rut", "anio", "nombre_agf"]], on="archivo") \
-        .to_csv(DIR_PROC / "identidades.csv", index=False, encoding="utf-8-sig")
+        .to_csv(DIR_PROC / "identidades_xml.csv", index=False, encoding="utf-8-sig")
 
     res.to_csv(DIR_PROC / "continuidad_resumen.csv", index=False, encoding="utf-8-sig")
     det_a = m[m["dif"] != 0][["rut", "anio", "estado", "codigo", "serie",

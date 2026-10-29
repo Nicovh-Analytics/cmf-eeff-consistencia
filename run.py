@@ -28,6 +28,7 @@ ETAPAS = [
 ("03o", "validaciones/fidelidad/03a_ocr.py", "OCR de paginas imagen (requiere Tesseract)", True, []),
 ("03b", "validaciones/estructura/03b_estructura.py", "subtotales e identidades",            True,  []),
 ("03c", "validaciones/estructura/03c_identidades.py", "Identidades entre estados del PDF", True, []),
+("03d", "validaciones/estructura/03d_ecp.py", "ECP leido desde el PDF (series y total)", True, []),
 ("04",  "consolidacion/04_candidatos.py",          "consolida candidatos",                    True,  []),
 ("06",  "consolidacion/06_ficha.py",               "fichas de verificacion (requiere muestra)", False, ["--muestra"]),
 ]
