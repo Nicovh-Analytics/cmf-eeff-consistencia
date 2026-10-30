@@ -111,22 +111,33 @@ def filas_multicolumna(pagina):
     renglones = []
     for ln in lineas:
         txt = " ".join(w[0] for w in sorted(ln["txt"], key=lambda w: w[1])).strip()
-        continua = (not txt) or bool(RE_CONTINUA.match(txt))
+        # Un anio solo en su linea continua la glosa: "... al 31 de diciembre de" / "2020"
+        continua = (not txt) or bool(RE_CONTINUA.match(txt)) or bool(re.fullmatch(r"\(?(19|20)\d\d\)?\.?", txt))
         r = renglones[-1] if renglones else None
         # Un renglon que ya tiene montos no absorbe otra linea con montos: eso es otro renglon.
-        if r is not None and continua and not (ln["vals"] and r["vals"]):
+        # Salvo que sus "montos" sean solo guiones: glosa en 2 lineas con un "-" suelto en la
+        # primera y los montos en la segunda (revision 03d_eri: el "antes de distribucion"
+        # quedaba en 0). Los montos de la continuacion reemplazan a los guiones.
+        solo_guiones = r is not None and r["vals"] and not any(r["vals"].values())
+        if r is not None and continua and not (ln["vals"] and r["vals"] and not solo_guiones):
             r["glosa"] = (r["glosa"] + " " + txt).strip()
             for k, v in ln["vals"].items():
-                r["vals"].setdefault(k, v)
+                if solo_guiones:
+                    r["vals"][k] = v
+                else:
+                    r["vals"].setdefault(k, v)
             r["irr"] |= ln["irr"]
         else:
             renglones.append({"glosa": txt, "vals": dict(ln["vals"]), "y": ln["y"], "irr": set(ln["irr"])})
     return renglones, franjas
 
 
-def columna_total(pagina, franjas):
-    """True si la ultima franja tiene un rotulo "Total" encima (encabezado de la tabla)."""
+def columna_total(pagina, franjas, y_desde=None, y_hasta=None):
+    """True si la ultima franja tiene un rotulo "Total" encima (encabezado de la tabla).
+    Con y_desde / y_hasta solo mira esa franja vertical (el encabezado de UNA tabla: hay
+    paginas con dos tablas apiladas del mismo periodo y solo la segunda trae el Total)."""
     if len(franjas) < 2:
         return False
     f = franjas[-1]
-    return any(re.match(r"total", w[0], re.I) and f - 70 <= w[2] <= f + 5 for w in pagina["palabras"])
+    return any(re.match(r"total", w[0], re.I) and f - 70 <= w[2] <= f + 5
+               and (y_desde is None or y_desde < w[3] < y_hasta) for w in pagina["palabras"])

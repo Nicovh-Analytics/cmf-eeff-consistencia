@@ -30,6 +30,7 @@ la identidad esta mal planteada (no hay error en tantos fondos). Se imprime.
 
 Lee:      data/procesado/estructura_efe.csv (03b), cruce_resumen.csv, encabezados.csv, cuentas.csv
 Escribe:  data/procesado/identidades.csv            1 fila por fondo-anio-identidad-columna
+          data/procesado/lineas_03c.csv            lineas ubicadas (activo neto, resultado del ERI...) para el 03d
           data/procesado/identidades_no_cuadra.csv  las que no cuadran, clasificadas
 """
 import importlib
@@ -71,6 +72,16 @@ LINEAS = {
         glosa=re.compile(r"saldofinal|alfinaldel(per[ií]odo|ejercicio)|efectivo.*alcierre"),
         codigos=["SaldoFinalDeEfectivoYEfectivoEquivalente", "EfectivoYEfectivoEquivalenteAlFinalDelPeriodo"],
         patron_codigo=r"SaldoFinal.*Efectivo|Efectivo.*AlFinal"),
+    # Para el 03d (resultado del ERI = resultado del ECP). El ECP trae una fila con la misma
+    # glosa y el mismo valor: la pagina siguiente se lee solo si en la del ERI no hay
+    # candidata, y se corta en el titulo del ECP. siguientes: la glosa suele partirse DESPUES
+    # de los montos ("...originadas por actividades de  1.234" / "la operacion antes de
+    # distribucion de beneficios"); sin mirar la linea siguiente no se distingue antes/despues.
+    "resultado_eri": dict(
+        estado="ERI", corta_ecp=True, siguientes=True,
+        glosa=re.compile(r"(aumento|disminuci).*activos?netos?.*antes(de(la)?)?distribu"),
+        codigos=["AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios"],
+        patron_codigo=r"^AumentoDisminucionDeActivoNeto.*AntesDeDistribucion"),
 }
 # Pagina de cada estado = la de sus subtotales del 03b
 PAGINA_DE = {"ESF": ["total_activo", "total_pasivo"], "ERI": ["total_gastos", "total_ingresos"],
@@ -109,25 +120,39 @@ def resolver_codigos(todos):
     return out
 
 
-def lineas_pagina(coords, p, cache):
-    """[(glosa+previas, glosa, act, ant, pagina)] de las lineas con montos. Las previas son
-    hasta 2 lineas sin montos inmediatamente anteriores (rotulo partido en 2 o 3 lineas:
-    "Utilidad (perdida) de la" / "operacion antes de" / "impuesto  (15.751)")."""
-    if p not in cache:
+RE_TITULO_ECP = re.compile(r"estados?decambios|cambios?en(el|los)?activos?netos?")
+
+
+def lineas_pagina(coords, p, cache, corta_ecp=False):
+    """[(glosa+previas, glosa, act, ant, pagina, glosa+siguientes)] de las lineas con montos.
+    Las previas son hasta 2 lineas sin montos inmediatamente anteriores (rotulo partido en 2 o
+    3 lineas: "Utilidad (perdida) de la" / "operacion antes de" / "impuesto  (15.751)"); el
+    ultimo elemento es previas+glosa+siguientes (hasta 2 posteriores sin montos: el monto puede
+    ir en la linea del medio). corta_ecp: deja de leer en el titulo del ECP."""
+    if (p, corta_ecp) not in cache:
         pg = coords["paginas"].get(str(p))
+        filas = filas_espaciales(pg)[0] if pg else []
         out, previa = [], ""
-        for g, a, b, _ in (filas_espaciales(pg)[0] if pg else []):
+        for i, (g, a, b, _) in enumerate(filas):
             if a is None:
+                if corta_ecp and RE_TITULO_ECP.search(norm(g)):
+                    break
                 previa = (previa.split("\x00")[-1] + "\x00" + g) if previa else g   # ultimas 2
                 continue
-            out.append((norm(previa.replace("\x00", " ") + " " + g), norm(g), a, b, p))
+            sig = []
+            for g2, a2, _, _ in filas[i + 1:i + 3]:
+                if a2 is not None:
+                    break
+                sig.append(g2)
+            out.append((norm(previa.replace("\x00", " ") + " " + g), norm(g), a, b, p,
+                        norm(" ".join([previa.replace("\x00", " "), g] + sig))))
             previa = ""
-        cache[p] = out
-    return cache[p]
+        cache[(p, corta_ecp)] = out
+    return cache[(p, corta_ecp)]
 
 
-def ubicar(lineas, rx, x_act, x_ant):
-    cand = [l for l in lineas if rx.search(l[1]) or rx.search(l[0])]
+def ubicar(lineas, rx, x_act, x_ant, siguientes=False):
+    cand = [l for l in lineas if rx.search(l[1]) or rx.search(l[0]) or (siguientes and rx.search(l[5]))]
     for l in cand:
         if (x_act and abs(abs(l[2]) - abs(x_act)) <= TOL) or (x_ant and abs(abs(l[3]) - abs(x_ant)) <= TOL):
             return l, "glosa_y_valor"
@@ -183,7 +208,7 @@ def main():
     xml_de = {a: {(c, k): v for c, k, v in zip(g["contexto"], g["codigo"], g["valor"].fillna(0))}
               for a, g in cta.groupby("archivo")}
 
-    filas, ubic = [], {k: [0, 0] for k in LINEAS}
+    filas, ubic, lineas_out = [], {k: [0, 0] for k in LINEAS}, []
     for r in ok.itertuples(index=False):
         t = tot.get((r.rut, r.anio))
         if not t:
@@ -203,8 +228,14 @@ def main():
             cod = codigos[k]
             xa = x.get(("PeriodoActual", cod)) if cod else None
             xb = x.get(("PeriodoAnterior", cod)) if cod else None
-            lin = lineas_pagina(coords, p, cache) + lineas_pagina(coords, p + 1, cache)
-            l, metodo = ubicar(lin, cfg["glosa"], xa, xb)
+            sig = cfg.get("siguientes", False)
+            if cfg.get("corta_ecp"):
+                l, metodo = ubicar(lineas_pagina(coords, p, cache, corta_ecp=True), cfg["glosa"], xa, xb, sig)
+                if l is None:
+                    l, metodo = ubicar(lineas_pagina(coords, p + 1, cache, corta_ecp=True), cfg["glosa"], xa, xb, sig)
+            else:
+                lin = lineas_pagina(coords, p, cache) + lineas_pagina(coords, p + 1, cache)
+                l, metodo = ubicar(lin, cfg["glosa"], xa, xb, sig)
             if l is None:
                 continue
             ubic[k][0] += 1
@@ -212,6 +243,12 @@ def main():
             nuevas[k] = dict(actual=l[2], anterior=l[3], xml_actual=xa, xml_anterior=xb, pagina=q, metodo=metodo,
                              ocr=coords["paginas"].get(str(q), {}).get("origen") == "ocr",
                              esp=es_espaciada(coords, q))
+
+        # Lineas ubicadas (las usa el 03d: activo neto del ESF, resultado del ERI)
+        for k, n in nuevas.items():
+            for col in ("actual", "anterior"):
+                lineas_out.append(dict(rut=r.rut, anio=r.anio, linea=k, columna=col, pdf=n[col],
+                                       xml=n[f"xml_{col}"], pagina=n["pagina"], metodo=n["metodo"], ocr=n["ocr"]))
 
         def termino(nombre, col):
             if nombre in SUB03B:
@@ -263,6 +300,7 @@ def main():
 
     df = pd.DataFrame(filas)
     df.to_csv(DIR_PROC / "identidades.csv", index=False, encoding="utf-8-sig")
+    pd.DataFrame(lineas_out).to_csv(DIR_PROC / "lineas_03c.csv", index=False, encoding="utf-8-sig")
     nc = df[df["clase"] != "cuadra"]
     nc.to_csv(DIR_PROC / "identidades_no_cuadra.csv", index=False, encoding="utf-8-sig")
 

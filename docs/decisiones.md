@@ -272,6 +272,10 @@ Enlace de notas (FMNO) roto en 15 fondo-año: el PDF devuelve "ACCION NO PERMITI
   de 2021 en el 80% de las cuentas, con algunas cifras retocadas (p. ej. operación anterior 1.308.972
   vs 1.308.872 en el XML 2021). 
 
+## H10
+
+F31 2011: anomalía de asignación del resultado por serie (aislada). Serie A +288.073.091 y APV-A −287.042.826 antes de distribución, sobre un activo neto total de 56,3 millones; se compensan (neto 1.030.265; resultado del fondo 2.226.661). Coinciden PDF, XML y comparativo del PDF 2012. Barrido del XML por serie de todo el corpus (pares de series con resultados opuestos que se compensan y superan el activo neto de cada una): único caso. Hipótesis: traspaso de A a APV-A registrado como aporte en APV-A con contrapartida en resultado. Fuera del alcance de consistencia; no publicable sin nota que lo explique. Mismo PDF: fusión de series B+D→F revelada en nota al pie, presentada en el saldo inicial.
+
 ## 6. Lecciones de método
 
 - **Un patrón de hallazgo puede ser un artefacto del script.** Con el script anterior a D18, AGF AA habría parecido la AGF con peor fidelidad del mercado. Ningún nombre de AGF se publica sin verificación a mano.
@@ -352,4 +356,84 @@ Enlace de notas (FMNO) roto en 15 fondo-año: el PDF devuelve "ACCION NO PERMITI
 - Continuidad: emparejar series por monto (cierre t-1 = inicio t) cuando cambia el código (ej. EA-AM → Z).
 - Agrupar por rut_agf (nombre_agf trae nombre de fondo en algunos XML).
 - Hipótesis a verificar: el XML no acepta gastos con saldo positivo (caso de otros gastos reclasificados a ingresos).
-- Respuesta de la CMF sobre el alcance de sus validaciones (solicitud enviada; incorporar al README cuando llegue).
+- Respuesta de la CMF sobre el alcance de sus validaciones (solicitud enviada; incorporar al README cuando llegue).## 03d – Cobertura del ECP y cruce con el resultado del ERI (2026-10-29)
+
+Sesión de cobertura del 03d: de 86,5% a 92,4% de fondo-año con el ECP del año leído (97,6% sobre los PDF legibles; 236 fondo-año son escaneados sin OCR de la página del ECP). Los errores del PDF en `evolucion` no subieron (40 → 39): cada regla nueva se validó contra la lista de errores, no solo contra la cobertura.
+
+### Decisiones de lectura
+
+**D-ECP1. Resultado del ERI = resultado del ECP (chequeo `resultado_eri`).**
+- Caso: identidad pendiente entre estados; el 03c ya ubicaba líneas del ERI.
+- Decisión: el 03c ubica "aumento de activo neto antes de distribución" en el ERI (`lineas_03c.csv`) y el 03d lo compara con la misma fila de la columna Total del ECP. La glosa se busca uniendo líneas previas y siguientes (el monto suele ir en la primera o en la del medio y "antes de distribución" abajo); la página siguiente al ERI se lee solo si en la del ERI no hay candidata, y se corta en el título del ECP (el ECP trae una fila con la misma glosa y el mismo valor: tomarla haría cuadrar la identidad sin probar nada).
+- Efecto: ubicación 81,0% → 96,7%; cuadra 98,2% en el PDF y 100% en el XML.
+- Límite: primera revisión 12/34 errores reales; los 22 restantes eran lectura y se corrigieron las causas con 3+ casos (D-ECP2 a D-ECP4). Quedan 18 `probable_error_pdf`.
+
+**D-ECP2. Columna anterior con montos menores a 100 (`lector_espacial._franjas`).**
+- Caso: un fondo en dólares: toda la columna anterior del ERI tiene montos < 100 ("(56)", "5"); `_es_monto_de_franja` exige separador de miles o 3+ dígitos, la columna no formaba franja y se perdía entera (anterior = 0 en todas las líneas).
+- Decisión: si solo hay una franja, se busca a su derecha el grupo más poblado (3+) de enteros cortos alineados. El "31" de "31 de diciembre" del encabezado queda en otro grupo.
+- Efecto: `resultado_eri` 25 → 17 `probable_error_pdf`; en el 03b, `distinto_xml` de total_gastos y total_ingresos anterior 56 → 32 y 56 → 35.
+- Límite: hizo visible un caso con "73.0" en una columna de enteros, leído 730 (ver D-ECP10).
+
+**D-ECP3. Guion suelto en la primera línea de una glosa partida (`lector_multicolumna`).**
+- Caso: un fondo: "Aumento (disminución)…" con un "-" en la columna Total y los montos en la línea siguiente; la regla "un renglón con montos no absorbe otra línea con montos" dejaba el guion (0) como valor.
+- Decisión: un renglón con solo guiones absorbe la continuación con montos, que los reemplazan.
+
+**D-ECP4. Tablas apiladas del mismo período.**
+- Caso: muchas series: la página trae dos tablas, la primera sin columna Total; el "Total" de la página hacía tomar la última serie de la primera tabla como Total.
+- Decisión: "Total" se busca solo en el encabezado de cada tabla; tabla sin Total seguida de otra del mismo período en la misma página → se unen las columnas.
+- Efecto: 121 bloques unidos; `resultado_eri` lectura 214 → 145, `cierre_esf` lectura 194 → 127.
+
+**D-ECP5. Dos períodos lado a lado en una tabla.**
+- Caso: una plantilla (series y Total de 2016 | series y Total de 2015): el bloque tomaba el Total de 2015 y se fechaba como anterior; el año actual quedaba sin bloque.
+- Decisión: dos columnas Total (por rótulo, o por suma si el rótulo no está en las coordenadas) y un año distinto sobre cada mitad → dos bloques. Años sueltos o como fecha ("31/12/2015"); se usa solo la línea de años más cercana a la tabla (el título "2014 y 2013" también queda encima).
+- Efecto: 240 bloques partidos. Casos conocidos: F32 2016, F33 2015, F34 2014.
+
+**D-ECP6. Variantes de título y de fila.**
+- "cambios en activo neto" sin artículo y "cambios en el patrimonio" (52 fondo-año sin título reconocido).
+- Filas "patrimonio neto atribuible" (plantillas con título "activo neto" y filas "patrimonio").
+- Hasta 4 letras arrastradas de filas vecinas antes de "activo neto" en texto espaciado ("AARA c tiv o n e to…", un fondo); "Total activo neto" (5 letras) sigue excluido.
+- Un año solo en su línea continúa la glosa ("… al 31 de diciembre de" / "2020").
+- Montos sobre la glosa (alineación superior de celda): una fila reconocida sin montos toma los del renglón sin nombre inmediatamente anterior (≤ 15 pt).
+
+**D-ECP7. Apertura del bloque.**
+- Caso: el saldo inicial también se titula "al 31 de diciembre de <año anterior>" (correcto); el 03d lo leía como cierre y no abría el bloque.
+- Decisión: cualquier fila de activo neto abre si no hay bloque abierto, salvo que venga justo después de movimientos (es el cierre de un bloque cuyo inicio no se reconoció). Una apertura sin movimientos se reemplaza solo si estaba titulada como cierre.
+- Efecto colateral detectado y corregido: la primera versión mezclaba períodos (un fondo: abría con el cierre de 2023 y sumaba movimientos de 2022). Se vio porque apareció un patrón nuevo concentrado (`distinto=inicio`, 6 casos) y `evolucion` subió de 40 a 53 errores. Con la regla del cierre huérfano volvió a 39.
+
+**D-ECP8. Montos desfasados una fila.**
+- Caso: dos fondos: glosas de varias líneas con montos alineados arriba; cada fila lee los montos de la siguiente (aportes negativos, rescates vacíos).
+- Decisión: aportes todos negativos, o rescates sin aportes → los errores del bloque pasan a lectura ("montos desfasados una fila"). Rescates positivos no cuentan (hay plantillas que los imprimen sin paréntesis).
+
+**D-ECP9. Fecha por el XML cuando el texto la contradice.**
+- Caso: un ECP 2015 con glosa "al 31 de diciembre de 2013"; el 03d priorizaba el año de la glosa y descartaba el bloque.
+- Decisión: si el cierre del Total coincide con el XML de una sola columna y el año del texto dice otra cosa, manda el XML; el año del texto queda en `ecp_bloques.anio_texto`.
+- Efecto: `solo_anterior` 93 → 55 en la cobertura; da origen al hallazgo de glosa desactualizada.
+
+**D-ECP10. Decimales concatenados, a propósito.**
+- Caso: "73.0" en una columna de enteros se lee 730 (03b: transposición falsa).
+- Decisión: no se cambia `_valor_espacial`. Distinguir "73,0" de un monto con un grupo de miles faltante exige contrastar con la suma o el XML, que es justo lo que hace la validación. Un caso aislado; mejor un falso positivo descartable en revisión que ocultar un tipeo.
+
+**D-ECP11. Decisión de cobertura por muestra.**
+- Caso: tras los arreglos por plantilla quedaban ~230 fondo-año legibles sin bloque, repartidos en varios motivos.
+- Decisión: muestra del 10% por motivo (mínimo 3), priorizando una AGF distinta por caso, con etiqueta de patrón; arreglar solo patrones con 3+ casos de 2+ AGF. 38 casos: 31 en 5 patrones.
+- Efecto: 90,2% → 92,4%. Lo que queda (108 legibles) son grupos de 2 a 34 casos; se cierra la cobertura.
+
+### Hallazgos
+
+**H-ECP1. Errores en el tramo antes → distribución → después del ECP (5 casos, PDF).** En los cinco el "después de distribución" y el cierre son correctos; el error está en "antes" o en la distribución, por eso el ECP cuadra hasta el cierre y solo lo ve el cruce con el ERI.
+- Signo invertido: antes = después − distribución (dif = 2 × distribución) (un fondo).
+- Fila desplazada: el resultado impreso en la fila de distribución; antes = "-", en efectivo / en cuotas = "-" (dos fondos, uno de ellos lo repite en el comparativo del año siguiente).
+- Reparto compensado: antes y distribución rebajados en el mismo monto; corregido en el comparativo del año siguiente (un fondo).
+- Pendiente: regla automática (ubicar "después de distribución" en el ERI; marcar cuando el "después" coincide y el "antes" no).
+
+**H-ECP2. Resultado del ERI inconsistente con el ECP, corregido en el comparativo del año siguiente sin aviso visible (5 casos, PDF).** cinco fondo-año. Más dos errores puntuales del ERI: tipeo en la línea (un caso) y línea omitida (un caso). Pendiente: chequeo de comparativos PDF vs PDF (año t−1 actual vs año t anterior) y búsqueda de nota (`notas_continuidad.py`).
+
+**H-ECP3. Glosa con el año desactualizado (46 fondo-año).** El texto de la glosa dice un año anterior al del bloque (plantilla copiada sin actualizar), mientras el cierre coincide con el XML del año correcto. Muestra: 7/7 confirmados en la columna actual (desfase 1, 2 o 3) y en el comparativo con desfase 2; el comparativo con desfase 0 resultó lectura nuestra (glosas sin año, 3/3) y se excluye del conteo. 2 casos sin determinar. Es un error de forma, no de cifras.
+
+**H-ECP4. Error de cifra en el Total de una serie única.** Un fondo de serie única: el aporte del Total difiere del de la serie; transacciones y cierre calzan con la serie. Pendiente confirmar con el XML.
+
+
+
+### Casos conocidos agregados (03d)
+
+F32 2016, F33 2015, F34 2014 (lado a lado), F35 2023 (texto espaciado), F36 2025 (guion suelto), F37 2018 (desfase de filas), F38 2022 (columna anterior con montos chicos). La salida del 03d muestra para cada caso sus bloques (columnas, lado a lado, tablas unidas, fechado).

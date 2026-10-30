@@ -91,9 +91,10 @@ El ECP trae una columna por serie más una de total, y cada período en su propi
 
 | | |
 |---|---|
-| fondo-año con el bloque del año leído | 86,5% (año anterior: 82,9%) |
+| fondo-año con el bloque del año leído | 92,4% (año anterior: 86,0%); 97,6% sin los PDF escaneados sin OCR de esa página |
 | chequeos de la columna Total que cuadran en el XML | 100% (la lectura asigna bien las filas) |
-| cierre del ECP = activo neto del ESF, en el PDF | 97,1% |
+| cierre del ECP = activo neto del ESF, en el PDF | 98,7% |
+| resultado del ERI = resultado del ECP (antes de distribución), en el PDF | 98,2% |
 
 Lo que encontró, verificado a mano:
 
@@ -101,6 +102,9 @@ Lo que encontró, verificado a mano:
 - **Cifras de series mal impresas:** un monto de una serie no cuadra ni con su columna ni con la suma de su fila, por un dígito o dos dígitos traspuestos (15 de 15 confirmados).
 - **Saldo inicial distinto del cierre del año anterior en el mismo documento**, en PDF y XML a la vez (6 casos). En uno, una nota explica que se sumó al saldo inicial el patrimonio de un fondo absorbido en marzo, cuando debió presentarse como movimiento del período; el comparativo del año anterior no se reexpresó.
 - **Otros 7 casos donde solo falla el XML** (el PDF es consistente), siempre en el arrastre del año anterior.
+- **Errores en el tramo antes de distribución → distribución → después (5 casos):** el ECP cuadra hasta el cierre y solo el cruce con el ERI lo muestra. Tres formas: la distribución restada con el signo invertido (diferencia = 2 × distribución), el resultado impreso en la fila de distribución, y "antes" y distribución rebajados en el mismo monto. En los tres el "después" y el cierre son correctos.
+- **Resultado del ERI que no concilia con el ECP y se corrige en el comparativo del año siguiente** sin aviso visible (5 casos).
+- **Glosa con el año desactualizado (46 fondo-año):** "al 31 de diciembre de 2013" en el ECP de 2015, con las cifras correctas. Es la plantilla del año anterior sin actualizar.
 
 ### Cruce espejo XML ↔ PDF (03, 04)
 
@@ -156,6 +160,8 @@ Cada etapa que marca casos se contrastó con revisión manual del PDF original:
 | 03d, rótulo incorrecto | 16/17 fondos |
 | 03d, continuidad (PDF y XML, o solo XML) | 13/13 |
 | 03d, no detección | 2 errores reales en 10 casos de lectura; uno de ellos ya estaba marcado por otro chequeo del mismo fondo-año |
+| 03d, resultado del ERI = ECP | 12/34 en la primera revisión; las causas de lectura con 3 o más casos se corrigieron y quedan 18 marcados |
+| 03d, glosa desactualizada | 7/7 (el comparativo que dice el año actual resultó lectura, 3/3, y se excluye) |
 
 ¹ Esa muestra (37 casos) también se usó para corregir el lector: 16 eran lectura nuestra, por 4 causas que se corrigieron. La cifra es en muestra.
 
@@ -164,7 +170,7 @@ Cada etapa que marca casos se contrastó con revisión manual del PDF original:
 
 ## Hallazgos de método
 
-**1. El cruce por números tiene un punto ciego.** Buscar cada cifra del XML en el PDF no detecta un error si el valor equivocado coincide con otra cifra del documento, porque no queda ningún monto huérfano. Por eso el 03b no busca cifras: **reconstruye cada estado y verifica que sume**. Medido: de 69 fondo-año con error estructural en el PDF, **34 no aparecen** entre los candidatos del cruce espejo. Lo mismo con el 03c: de 39 fondo-año con una identidad rota en el PDF, **29 no son candidatos** del cruce espejo; y de 29 con la identidad rota solo en el XML, 19 tampoco. Y con el 03d: de 57 fondo-año con error del PDF en el ECP, **37 no son candidatos** del cruce espejo.
+**1. El cruce por números tiene un punto ciego.** Buscar cada cifra del XML en el PDF no detecta un error si el valor equivocado coincide con otra cifra del documento, porque no queda ningún monto huérfano. Por eso el 03b no busca cifras: **reconstruye cada estado y verifica que sume**. Medido: de 70 fondo-año con error estructural en el PDF, **35 no aparecen** entre los candidatos del cruce espejo. Lo mismo con el 03c: de 40 fondo-año con una identidad rota en el PDF, **30 no son candidatos** del cruce espejo; y de 29 con la identidad rota solo en el XML, 19 tampoco. Y con el 03d: de 57 fondo-año con error del PDF en el ECP, **37 no son candidatos** del cruce espejo.
 
 **2. Leer el PDF por posición, no por texto.** La primera versión del 03b leía el texto extraído y acumuló reglas por cada plantilla de AGF: números de nota, montos partidos por la extracción, negrita simulada, glosas en dos líneas. Además usaba el XML para decidir cómo leer el PDF, y **auditar un documento usando como árbitro al documento auditado sesga el resultado**. La versión final usa la geometría de la página:
 
@@ -178,12 +184,14 @@ Con eso, el ruido de lectura cayó a la mitad y la ubicación de subtotales subi
 
 **4. Un patrón limpio en el tiempo también puede ser nuestro.** El cruce efectivo ESF = saldo final EFE del XML fallaba en la columna actual entre 2011 y 2015 (12 a 20 casos por año) y nunca desde 2016: parecía el año en que el regulador empezó a validarlo. Al contar cuántos XML traían el código del saldo final, faltaban exactamente esos casos. 76 XML de esos años escriben el código con un espacio al final (`SaldoFinalDeEfectivoYEfectivoEquivalente `), el parser no lo reconocía y la identidad comparaba contra un saldo vacío. Se corrige limpiando los códigos al leer el XML. Corregido eso, apareció una segunda capa: esos mismos 76 XML presentan el flujo de efectivo por método indirecto, con su propia taxonomía: el aumento neto y los flujos netos tienen otros códigos, que además el asignador de estados no reconocía como del EFE. La identidad del EFE fallaba porque tomaba como cero el término que no encontraba. Con ambas plantillas reconocidas, las identidades del EFE se evalúan en los 4.512 XML y no fallan en ninguno. Antes de atribuir un patrón a una política, hay que descartar que sea un cambio de formato de los datos.
 
-**5. Materialidad.** Como en una auditoría real, las diferencias iguales o menores a un umbral se registran como observación pero no se revisan: 100 en fondos en pesos (montos en M$) y 1 en fondos en otra moneda. Es una sola definición (`config.py`) que usan el cruce espejo (04), la estructura (03b) y las identidades (03c).
+**5. Una regla de lectura puede abrir una puerta y cerrar otra.** Para leer el saldo inicial titulado "al 31 de diciembre del año anterior" (que es correcto), el 03d pasó a abrir un bloque con cualquier fila de activo neto. La cobertura subió, pero en plantillas donde la fila de inicio no se reconocía, el bloque abría con el cierre de un año y sumaba los movimientos del otro. Se notó porque los errores del PDF subieron de 40 a 53 con un patrón nuevo concentrado (saldo inicial distinto del XML). Desde entonces cada cambio de lectura se mide contra la lista de errores, no solo contra la cobertura; con la regla corregida (un cierre que viene después de movimientos no abre bloque) volvieron a 39 y la cobertura subió de 86,5% a 92,4%. Las causas que quedaban se priorizaron con una muestra del 10% por motivo, una administradora distinta por caso, y se arreglaron solo los patrones con tres o más casos en dos o más administradoras.
+
+**6. Materialidad.** Como en una auditoría real, las diferencias iguales o menores a un umbral se registran como observación pero no se revisan: 100 en fondos en pesos (montos en M$) y 1 en fondos en otra moneda. Es una sola definición (`config.py`) que usan el cruce espejo (04), la estructura (03b) y las identidades (03c).
 
 ## Limitaciones
 
 - **PDF escaneados:** se leen con OCR (Tesseract). El 10% de los subtotales escaneados que no cuadra se trata como lectura, nunca como error, así que en esos documentos el método puede no ver un error real.
-- **ECP:** se lee el 86,5% de los fondo-año. Las series no se comparan con el XML una a una (sus nombres no coinciden entre documentos); una serie mal impresa se detecta solo cuando rompe a la vez su columna y la suma de su fila.
+- **ECP:** se lee el 92,4% de los fondo-año (97,6% de los legibles; 236 son PDF escaneados sin OCR de la página del ECP). Las series no se comparan con el XML una a una (sus nombres no coinciden entre documentos); una serie mal impresa se detecta solo cuando rompe a la vez su columna y la suma de su fila.
 - **2011:** algunas plantillas del primer año NIIF tienen un encabezado que el lector aún no reconoce; esos casos quedan como lectura, no como error.
 - **Solo fondos vigentes** (sesgo de supervivencia) y **solo el último envío** de cada fondo-año (los reenvíos no son observables).
 - **El cruce detecta desacuerdo, no culpa.** Cuál de los dos documentos tiene el error se determina caso a caso, en revisión manual.

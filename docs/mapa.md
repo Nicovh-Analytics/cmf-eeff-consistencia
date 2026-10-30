@@ -31,12 +31,12 @@ flowchart TB
     CTA --> E03c
     E03b --> EST[/estructura_efe.csv<br>estructura_efe_no_suma.csv/]
     EST -->|totales ya ubicados| E03c
-    E03c --> IDE[/identidades.csv<br>identidades_no_cuadra.csv/]
+    E03c --> IDE[/identidades.csv<br>identidades_no_cuadra.csv<br>lineas_03c.csv/]
     COO --> LM{{comun/lector_multicolumna}}
     OCR --> LM
     LM --> E03d[03d ECP]
     CTA --> E03d
-    IDE -->|activo neto del ESF| E03d
+    IDE -->|activo neto del ESF, resultado del ERI| E03d
     E03d --> ECP[/ecp_bloques.csv<br>ecp_chequeos.csv<br>ecp_no_cuadra.csv/]
 
     CRU --> E04[04 candidatos]

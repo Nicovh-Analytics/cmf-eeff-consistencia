@@ -27,7 +27,7 @@ se emparejan con las del XML). Clases de lo que no cuadra:
   revisar_sin_xml       total sin cifras XML para comparar
   observacion_inmaterial  diferencia bajo el umbral de materialidad
 
-Lee:      cruce_resumen.csv, encabezados.csv, cuentas.csv, identidades.csv (03c), coords_pdf/
+Lee:      cruce_resumen.csv, encabezados.csv, cuentas.csv, identidades.csv y lineas_03c.csv (03c), coords_pdf/
 Escribe:  data/procesado/ecp_bloques.csv     1 fila por fondo-anio-bloque (que se leyo)
           data/procesado/ecp_chequeos.csv    1 fila por chequeo
           data/procesado/ecp_no_cuadra.csv   los que no cuadran, clasificados
@@ -50,7 +50,9 @@ def norm(s):
     return re.sub(r"\s+", "", str(s)).lower()
 
 
-RE_TITULO = re.compile(r"cambios?en(el|los)activos?netos?")
+# "cambios en activo neto" (sin articulo) y plantillas que lo titulan "cambios en el patrimonio"
+# (diag de cobertura: 13 y 39 fondo-anio sin titulo reconocido)
+RE_TITULO = re.compile(r"cambios?en(el|los)?(activos?netos?|patrimonio)")
 # Primera regla que calza, sobre la glosa sin espacios
 FILAS = [
     ("neto", re.compile(r"transacci|netoorigina.*cuota")),
@@ -62,9 +64,12 @@ FILAS = [
     ("dist_parte", re.compile(r"^en(efectivo|cuotas)")),
     ("dist", re.compile(r"^(total)?(distribuci|reparto)")),
     # resultado con la glosa cortada o sin "antes/despues": el primero es antes, el segundo despues
-    ("res_generico", re.compile(r"^\(?(aumento|disminuci).*activos?neto")),
-    ("activo_neto", re.compile(r"^.?activos?netos?atribuible")),
+    ("res_generico", re.compile(r"^\(?(aumento|disminuci).*(activos?|patrimonio)neto")),
+    # "Patrimonio neto atribuible a los participes al 1 de enero" (plantillas con titulo "activo
+    # neto" pero filas "patrimonio neto": muestra de cobertura, sin_fila_inicio)
+    ("activo_neto", re.compile(r"^.{0,4}(activos?|patrimonio)netos?atribuible")),
 ]
+MOVIMIENTOS = {"aportes", "rescates", "neto", "res_antes", "res_despues", "dist", "dist_partes"}
 RE_CIERRE = re.compile(r"diciembre|31-12|31/12|cierre|final")
 RE_INICIO = re.compile(r"enero|01-01|01/01|inicio")
 RE_ANIO = re.compile(r"(?:19|20)\d\d")
@@ -91,10 +96,18 @@ def leer_bloques(coords, paginas):
         if not franjas:
             continue
         hay_total = columna_total(pg, franjas)
-        b, encabezado, pendiente = None, [], None
+        b, encabezado, pendiente, y_fin, solo_montos, ultima = None, [], None, -1, None, None
         for r in renglones:
             g = norm(r["glosa"])
             clave = next((k for k, rx in FILAS if rx.search(g)), None)
+            # Montos alineados ARRIBA de la celda: renglon solo con montos y, justo despues, la
+            # glosa reconocida sin montos ("1.468.726" / "Activo neto ... al 31 de diciembre").
+            # Muestra de cobertura: sin_fila_cierre de varias AGF.
+            if clave and not r["vals"] and solo_montos is not None and r["y"] - solo_montos["y"] <= 15:
+                r = {**r, "vals": dict(solo_montos["vals"]), "irr": set(solo_montos["irr"])}
+                solo_montos = None
+            else:
+                solo_montos = r if (clave is None and r["vals"] and not g) else None
             # Fila reconocida sin montos ("Activo neto ... al 31 de diciembre") seguida de una
             # sin nombre con montos ("Valor Cuota  25.506.525 ..."): los montos son de la primera.
             if clave is None and r["vals"] and pendiente:
@@ -107,8 +120,25 @@ def leer_bloques(coords, paginas):
                 continue
             if clave == "activo_neto":
                 cierre, inicio = bool(RE_CIERRE.search(g)), bool(RE_INICIO.search(g))
-                if b is None and not cierre:
+                # Un bloque abierto sin ningun movimiento no era una apertura (cierre del bloque de
+                # la pagina anterior arriba de la pagina, por ejemplo): se descarta y esta fila abre.
+                # (solo si esa apertura se titulaba como cierre: hay plantillas donde la apertura sin fecha va
+                # seguida de "al 1 de enero" con los montos de aportes por un desfase de filas)
+                if (b is not None and not MOVIMIENTOS & set(b["filas"]) and not cierre
+                        and RE_CIERRE.search(norm(b["glosa_inicio"]))):
+                    b = None
+                # Abre cualquier fila de activo neto si no hay bloque: el saldo inicial tambien se
+                # titula "al 31 de diciembre de <anio anterior>" (muestra de cobertura). Salvo que
+                # venga justo despues de movimientos: es el cierre de un bloque cuyo inicio no se
+                # reconocio, no una apertura (texto espaciado: abria con el cierre y mezclaba periodos).
+                huerfano = cierre and ultima in MOVIMIENTOS | {"res_generico"}
+                ultima = clave
+                if b is None and huerfano:
+                    continue
+                if b is None:
                     b = dict(pagina=p, n_cols=len(franjas), hay_total=hay_total, encabezado=encabezado,
+                             total_propio=columna_total(pg, franjas, y_fin, r["y"]),
+                             _pg=pg, _franjas=franjas, _y=r["y"],
                              glosa_inicio=r["glosa"], glosa_cierre="", ocr=pg.get("origen") == "ocr",
                              filas={"inicio": dict(r["vals"])}, irr={("inicio", k) for k in r["irr"]})
                 elif b is not None and (cierre or not inicio):
@@ -116,8 +146,9 @@ def leer_bloques(coords, paginas):
                     b["irr"] |= {("cierre", k) for k in r["irr"]}
                     b["glosa_cierre"] = r["glosa"]
                     bloques.append(b)
-                    b, encabezado = None, []
+                    b, encabezado, y_fin = None, [], r["y"]
                 continue
+            ultima = clave
             if b is None:
                 continue
             if clave == "res_generico":
@@ -129,12 +160,107 @@ def leer_bloques(coords, paginas):
             else:
                 b["filas"].setdefault(clave, dict(r["vals"]))
                 b["irr"] |= {(clave, k) for k in r["irr"]}
-    return bloques
+    return unir_tablas_apiladas([m for b in bloques for m in partir_lado_a_lado(b)])
+
+
+def desfase_filas(F):
+    """Montos corridos una fila respecto de su glosa (montos alineados arriba en celdas de varias
+    lineas): los aportes quedan negativos (traen los rescates) o no hay aportes pero si rescates.
+    Los rescates positivos NO cuentan: hay plantillas que los imprimen sin parentesis.
+    Los chequeos de un bloque asi son de lectura (revision de cobertura: 2 plantillas)."""
+    ap, re_ = F.get("aportes", {}), F.get("rescates", {})
+    neg = any(v < 0 for v in ap.values()) and all(v <= 0 for v in ap.values())
+    return bool(neg or (re_ and not ap))
+
+
+def partir_lado_a_lado(b):
+    """Una tabla con los DOS periodos lado a lado (series 2016 + Total | series 2015 + Total,
+    encabezado "2016 ... 2015"): se parte en dos bloques, cada uno con su Total y su anio.
+    Sin esto el bloque queda con el Total del anterior y el anio de la apertura (diag de
+    cobertura: 'otro_anio', plantilla de dos AGF)."""
+    pg, fr, y0 = b.get("_pg"), b.get("_franjas"), b.get("_y")
+    if not pg or not fr or len(fr) < 4:
+        return [b]
+    tot = {}                                   # columna (franja mas cercana) -> y del rotulo "Total"
+    for w in pg["palabras"]:
+        if re.match(r"total", w[0], re.I) and w[3] < y0:
+            k = min(range(len(fr)), key=lambda i: abs(fr[i] - w[2]))
+            if abs(fr[k] - w[2]) <= 30:            # "Total Series": el rotulo queda ~25 pt antes del borde
+                tot[k] = max(tot.get(k, 0), w[3])
+    ks = sorted(tot)
+    y_desde = min(tot.values()) - 40 if tot else y0 - 30
+    if len(ks) != 2:
+        # Sin rotulo "Total" legible en las coordenadas: se reconoce por suma. Hay un k0 tal que
+        # la columna k0 es la suma de las anteriores y la ultima la suma de las de k0+1 en adelante
+        # (en el inicio o en el cierre). Diag de cobertura: rotulo no legible en las coordenadas.
+        ks = []
+        for fila in ("inicio", "cierre"):
+            v = b["filas"].get(fila, {})
+            n = len(fr)
+            for k in range(1, n - 2):
+                a_ = sum(v.get(i, 0) for i in range(k))
+                b_ = sum(v.get(i, 0) for i in range(k + 1, n - 1))
+                if (k in v and n - 1 in v and v[k] and v[n - 1] and abs(a_ - v[k]) <= TOL * k
+                        and abs(b_ - v[n - 1]) <= TOL * (n - k)):
+                    ks = [k, n - 1]
+                    break
+            if ks:
+                break
+        y_desde = y0 - 30
+    if len(ks) != 2 or ks[1] != len(fr) - 1 or not 0 < ks[0] < ks[1] - 1:
+        return [b]
+    k0 = ks[0]
+    # el anio puede venir solo ("2015") o como fecha ("31/12/2015", "31-12-2015")
+    anios = [(w[1], int(re.search(r"(19|20)\d\d$", w[0]).group())) for w in pg["palabras"]
+             if re.fullmatch(r"(\d{1,2}[/.-]\d{1,2}[/.-])?(19|20)\d\d", w[0]) and y_desde <= w[3] < y0]
+    # Solo la linea de anios mas cercana a la tabla: el titulo ("... 31 de diciembre de 2014 y
+    # 2013") tambien queda sobre el bloque y mezclaria los anios de la primera mitad.
+    if anios:
+        y_cerca = max(w[3] for w in pg["palabras"]
+                      if re.fullmatch(r"(\d{1,2}[/.-]\d{1,2}[/.-])?(19|20)\d\d", w[0]) and y_desde <= w[3] < y0)
+        anios = [(x, a) for (x, a), w in zip(anios, [w for w in pg["palabras"]
+                 if re.fullmatch(r"(\d{1,2}[/.-]\d{1,2}[/.-])?(19|20)\d\d", w[0]) and y_desde <= w[3] < y0])
+                 if w[3] >= y_cerca - 6]
+    rango = [(fr[0] - 120, fr[k0] + 5), (fr[k0] + 5, fr[-1] + 5)]
+    por_mitad = [{a for x, a in anios if lo <= x <= hi} for lo, hi in rango]
+    if not all(len(a) == 1 for a in por_mitad) or por_mitad[0] == por_mitad[1]:
+        return [b]
+    mitades = []
+    for (desde, hasta), a in zip(((0, k0), (k0 + 1, len(fr) - 1)), por_mitad):
+        filas = {c: {k - desde: v for k, v in vals.items() if desde <= k <= hasta} for c, vals in b["filas"].items()}
+        mitades.append({**b, "filas": filas, "n_cols": hasta - desde + 1, "hay_total": True, "total_propio": True,
+                        "irr": {(c, k - desde) for c, k in b["irr"] if desde <= k <= hasta},
+                        "anio_forzado": a.pop(), "lado_a_lado": True})
+    return mitades
+
+
+def unir_tablas_apiladas(bloques):
+    """Pagina con dos tablas apiladas del MISMO periodo (muchas series): la primera sin
+    columna Total en su encabezado, la segunda con ella. Se unen en un bloque; las columnas
+    de la segunda van despues (indice + n_cols de la primera) y su ultima es el Total.
+    Sin esto la ultima serie de la primera tabla se toma como Total (revision 03d_eri)."""
+    out = []
+    for b in bloques:
+        a = out[-1] if out else None
+        if (a is not None and a["pagina"] == b["pagina"] and not a["total_propio"] and b["total_propio"]
+                and norm(a["glosa_inicio"]) == norm(b["glosa_inicio"])):
+            n = a["n_cols"]
+            for clave, vals in b["filas"].items():
+                a["filas"].setdefault(clave, {}).update({k + n: v for k, v in vals.items()})
+            a["irr"] |= {(c, k + n) for c, k in b["irr"]}
+            a.update(n_cols=n + b["n_cols"], hay_total=True, total_propio=True, glosa_cierre=b["glosa_cierre"],
+                     ocr=a["ocr"] or b["ocr"], tablas_unidas=True)
+            continue
+        out.append(b)
+    return out
 
 
 def anio_bloque(b):
     """Anio del bloque: el de la glosa del cierre o del inicio; si no, el mas repetido
-    en el encabezado del bloque (titulo de pagina, "a) Al 31-12-2020", fecha de columnas)."""
+    en el encabezado del bloque (titulo de pagina, "a) Al 31-12-2020", fecha de columnas).
+    Los bloques partidos lado a lado traen el anio de su encabezado de columnas."""
+    if b.get("anio_forzado"):
+        return b["anio_forzado"]
     for t in (b["glosa_cierre"], b["glosa_inicio"]):
         ys = set(RE_ANIO.findall(t))
         if len(ys) == 1:
@@ -281,6 +407,18 @@ def esf_activo_neto():
     return {(r.rut, r.anio, r.columna): (num(r.pdf), num(r.xml)) for r in i.itertuples()}
 
 
+def resultado_eri():
+    """(rut, anio, columna) -> (pdf, xml, metodo) del "aumento de activo neto antes de
+    distribucion" del ERI, ubicado por el 03c (lineas_03c.csv)."""
+    ruta = DIR_PROC / "lineas_03c.csv"
+    if not ruta.exists():
+        return {}
+    l = pd.read_csv(ruta, dtype={"rut": str})
+    l = l[l["linea"] == "resultado_eri"]
+    nn = lambda v: None if pd.isna(v) else float(v)
+    return {(r.rut, r.anio, r.columna): (nn(r.pdf), nn(r.xml), r.metodo) for r in l.itertuples()}
+
+
 def main():
     res = pd.read_csv(DIR_PROC / "cruce_resumen.csv", dtype={"rut": str, "paginas_estados": str})
     enc = pd.read_csv(DIR_PROC / "encabezados.csv", dtype={"rut": str})
@@ -293,6 +431,7 @@ def main():
     xml_de = {a: {(c, k): v for c, k, v in zip(g["contexto"], g["codigo"], g["valor"].fillna(0))}
               for a, g in cta.groupby("archivo")}
     esf = esf_activo_neto()
+    eri = resultado_eri()
     ruta_nc = DIR_PROC / "identidades_no_cuadra.csv"
     err_03c = set()
     if ruta_nc.exists():
@@ -315,6 +454,17 @@ def main():
         for b in bloques:
             b["total"] = indice_total(b)
             a = anio_bloque(b)
+            # Glosa desactualizada ("al 31 de diciembre de 2013" en el ECP 2015, revision de
+            # cobertura): si el cierre del Total coincide con el XML de UNA columna y el anio del
+            # texto dice otra cosa, manda el XML y el anio del texto queda registrado.
+            t_ = b["total"]
+            cie_ = b["filas"].get("cierre", {}).get(t_) if t_ is not None else None
+            xa_, xb_ = x.get(("PeriodoActual", XML["cierre"])), x.get(("PeriodoAnterior", XML["cierre"]))
+            calza = [an for xc, an in ((xa_, r.anio), (xb_, r.anio - 1))
+                     if cie_ is not None and xc is not None and abs(abs(cie_) - abs(xc)) <= TOL]
+            if a is not None and len(calza) == 1 and calza[0] != a:
+                b["anio_texto"], a = a, calza[0]
+                b["fechado_por"] = "xml_corrige_texto"
             if a is None:
                 # Sin fecha legible (texto espaciado, encabezado "2022 y 2021"): se fecha por el
                 # cierre del Total contra el XML; si no calza, por orden (el primero es el actual).
@@ -334,7 +484,9 @@ def main():
             por_col[col] = b
             filas_b.append({**base, "columna": col, "pagina": b["pagina"], "n_cols": b["n_cols"],
                             "total": b["total"], "filas": ",".join(sorted(b["filas"])), "ocr": b["ocr"],
-                            "fechado_por": b.get("fechado_por", "texto")})
+                            "fechado_por": b.get("fechado_por", "texto"), "anio_texto": b.get("anio_texto"),
+                            "tablas_unidas": b.get("tablas_unidas", False),
+                            "lado_a_lado": b.get("lado_a_lado", False)})
             fila_bloque = filas_b[-1]
             ctx = "PeriodoActual" if col == "actual" else "PeriodoAnterior"
             xml_t = {k: v for (c, k), v in x.items() if c == ctx}
@@ -346,6 +498,7 @@ def main():
             b["coincide_xml"] = sum(comp) / len(comp) if comp else None
             fila_bloque["coincide_xml"] = b["coincide_xml"]
             chk = chequear(b)
+            desfase = desfase_filas(b["filas"])
             suma_ok = all(abs(d) <= TOL for c, _, _, d in chk if c == "suma_series")
             series_ok = all(abs(d) <= TOL for c, k, _, d in chk if c != "suma_series" and k != b["total"])
             tip_cols, tip_filas = celdas_tipeo(b, chk)
@@ -378,6 +531,10 @@ def main():
                 if chequeo in ("evolucion", "transacciones") and not fila["cuadra"] and rotulo_saldo(b["filas"], k):
                     fila["clase"] = "probable_error_rotulo"
                     fila["detalle"] = "aumento neto impreso = inicio + aportes - rescates (saldo con rotulo de aumento neto)"
+                if desfase and fila["clase"].startswith("probable_error") and fila["clase"] != "probable_error_xml":
+                    fila["clase"], fila["detalle"] = "probable_lectura", "montos desfasados una fila"
+                    filas_c.append(fila)
+                    continue
                 det = tip_filas.get(next(iter(terms))) if chequeo == "suma_series" else tip_cols.get((chequeo, k))
                 fila["detalle"] = det or fila.get("detalle", "")
                 if det and fila["clase"] == "probable_lectura":
@@ -416,6 +573,29 @@ def main():
                     else:
                         fila["clase"] = "probable_lectura"
             filas_c.append(fila)
+        # Resultado del ERI = resultado del ECP (antes de distribucion), columna Total
+        for col, b in por_col.items():
+            t = b["total"]
+            ra = b["filas"].get("res_antes", {}).get(t) if t is not None else None
+            e = eri.get((r.rut, r.anio, col))
+            if ra is None or not e or e[0] is None:
+                continue
+            ctx = "PeriodoActual" if col == "actual" else "PeriodoAnterior"
+            xr = x.get((ctx, XML["res_antes"]))
+            d = abs(ra) - abs(e[0])
+            fila = {**base, "columna": col, "pagina": b["pagina"], "chequeo": "resultado_eri", "col": "total",
+                    "es_total": True, "dif": d, "cuadra": abs(d) <= TOL, "ocr": b["ocr"], "series_cuadran": True,
+                    "pdf": f"resultado_ecp={ra} | resultado_eri={e[0]}", "xml": f"resultado_ecp={xr} | resultado_eri={e[1]}",
+                    "distintos": ",".join(n for n, p_, x_ in (("resultado_ecp", ra, xr), ("resultado_eri", e[0], e[1]))
+                                          if x_ is not None and abs(abs(p_) - abs(x_)) > TOL),
+                    "cuadra_xml": None if xr is None or e[1] is None else abs(abs(xr) - abs(e[1])) <= TOL}
+            fila["clase"] = clasificar(fila, True, umbral)
+            if fila["clase"].startswith("probable_error") and fila["clase"] != "probable_error_xml":
+                if (not b["confiable"] or (b["coincide_xml"] or 0) < 0.5
+                        or (fila["distintos"] == "resultado_eri" and e[2] == "solo_glosa")):
+                    fila["clase"] = "probable_lectura"
+            filas_c.append(fila)
+
         if {"actual", "anterior"} <= set(por_col):
             ba, bp = por_col["actual"], por_col["anterior"]
             ini = ba["filas"].get("inicio", {}).get(ba["total"]) if ba["total"] is not None else None
@@ -451,9 +631,19 @@ def main():
         print(f"  con bloque {col:<9}: {k:>5} ({k / max(n, 1):.1%})")
     print(f"  bloques con columna Total identificada: {bl['total'].notna().mean():.1%}")
     print(f"  bloques fechados por el texto: {(bl['fechado_por'] == 'texto').mean():.1%} (resto: por XML u orden)")
+    gl = bl[bl["fechado_por"] == "xml_corrige_texto"]
+    # Comparativo cuyo texto dice el anio actual (desfase 0): en la muestra fueron glosas sin anio
+    # leidas desde el encabezado (lectura). La glosa desactualizada es el resto.
+    gd = gl[~((gl["columna"] == "anterior") & (gl["anio"] == gl["anio_texto"]))]
+    print(f"  bloques con anio del texto distinto al del XML: {len(gl)}; glosa desactualizada "
+          f"(sin el comparativo con desfase 0): {len(gd)} bloques en {gd[['rut', 'anio']].drop_duplicates().shape[0]}"
+          f" fondo-anio (ecp_bloques.csv: anio_texto)")
+    print(f"  bloques de dos tablas apiladas (unidas): {int(bl['tablas_unidas'].sum())}")
+    print(f"  bloques de dos periodos lado a lado (partidos): {int(bl['lado_a_lado'].sum())}")
     print(f"  bloques confiables (todas las filas suman al Total y el Total cuadra): {bl['confiable'].mean():.1%}")
     print(f"  bloques cuyo Total coincide con el XML en >= 50% de las filas: {(bl['coincide_xml'] >= 0.5).mean():.1%}")
     print(f"  activo neto del ESF disponible (03c): {len(esf)} fondo-anio-columna")
+    print(f"  resultado del ERI disponible (03c): {len(eri)} fondo-anio-columna")
     print("\ncolumnas por bloque:", bl["n_cols"].value_counts().sort_index().to_dict())
     print("\nchequeos (filas = bloque-columna o bloque-fila):")
     r_ = ch.groupby(["chequeo", "es_total"]).agg(n=("cuadra", "size"), cuadra_pdf=("cuadra", "mean"),
@@ -473,6 +663,12 @@ def main():
         malos = x_[x_["clase"] != "cuadra"]
         resumen = ", ".join(f"{c}x{n}" for c, n in malos["clase"].value_counts().items())
         print(f"  {rut} {anio}: {len(x_)} chequeos, {len(malos)} no cuadran" + (f": {resumen}" if resumen else ""))
+        bb = bl[(bl["rut"] == rut) & (bl["anio"] == anio)]
+        print("      bloques: " + (", ".join(
+            f"{b_.columna} (total {b_.total}, {b_.n_cols} col"
+            + (", lado a lado" if b_.lado_a_lado else "") + (", tablas unidas" if b_.tablas_unidas else "")
+            + (f", fechado {b_.fechado_por}" if b_.fechado_por != "texto" else "") + ")"
+            for b_ in bb.itertuples()) or "ninguno"))
         print(f"      esperado: {esperado}")
     print(f"\nsalida: {DIR_PROC / 'ecp_chequeos.csv'}")
     return 0

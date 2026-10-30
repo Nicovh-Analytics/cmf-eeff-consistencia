@@ -119,7 +119,25 @@ def _franjas(nums, ancho):
         else:
             grupos.append([x])
     grupos = [g for g in grupos if len(g) >= 2]
-    return [sorted(g)[len(g) // 2] for g in grupos]
+    franjas = [sorted(g)[len(g) // 2] for g in grupos]
+    if len(franjas) == 1:
+        # Columna anterior con puros montos chicos ("(56)", "5": < 100 y sin separador) no
+        # forma franja con _es_monto_de_franja y se perdia entera (revision 03d_eri). Se busca
+        # a la derecha de la unica franja, con enteros cortos alineados.
+        # El "31" de "31 de diciembre" del encabezado tambien es entero corto: se agrupan
+        # por posicion y se toma el grupo mas poblado.
+        cortos = sorted(w[2] for w in nums if w[2] > franjas[0] + GAP_FRANJA
+                        and re.fullmatch(r"\d{1,2}", w[0].strip("()-−–— ")))
+        gc = []
+        for x in cortos:
+            if gc and x - gc[-1][-1] <= GAP_FRANJA / 4:
+                gc[-1].append(x)
+            else:
+                gc.append([x])
+        gc = max(gc, key=len, default=[])
+        if len(gc) >= 3:
+            franjas.append(gc[len(gc) // 2])
+    return franjas
 
 
 def filas_espaciales(pagina):
