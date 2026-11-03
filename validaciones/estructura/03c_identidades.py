@@ -82,6 +82,13 @@ LINEAS = {
         glosa=re.compile(r"(aumento|disminuci).*activos?netos?.*antes(de(la)?)?distribu"),
         codigos=["AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios"],
         patron_codigo=r"^AumentoDisminucionDeActivoNeto.*AntesDeDistribucion"),
+    # Para el 03d (tramo antes -> distribucion -> despues): misma logica, "despues de distribucion".
+    # Fondos sin distribucion a veces imprimen una sola linea: entonces no se ubica y no importa.
+    "resultado_eri_despues": dict(
+        estado="ERI", corta_ecp=True, siguientes=True,
+        glosa=re.compile(r"(aumento|disminuci).*activos?netos?.*despu[eé]s(de(la)?)?distribu"),
+        codigos=["AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios"],
+        patron_codigo=r"^AumentoDisminucionDeActivoNeto.*DespuesDeDistribucion"),
 }
 # Pagina de cada estado = la de sus subtotales del 03b
 PAGINA_DE = {"ESF": ["total_activo", "total_pasivo"], "ERI": ["total_gastos", "total_ingresos"],

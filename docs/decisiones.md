@@ -437,3 +437,66 @@ Sesión de cobertura del 03d: de 86,5% a 92,4% de fondo-año con el ECP del año
 ### Casos conocidos agregados (03d)
 
 F32 2016, F33 2015, F34 2014 (lado a lado), F35 2023 (texto espaciado), F36 2025 (guion suelto), F37 2018 (desfase de filas), F38 2022 (columna anterior con montos chicos). La salida del 03d muestra para cada caso sus bloques (columnas, lado a lado, tablas unidas, fechado).
+
+## 03d tramo, 03e comparativos PDF vs PDF y 04b casos (2026-10-30 a 2026-11-02)
+
+### 03d – Tramo antes → distribución → después (regla automática)
+
+**D-ECP12. Forma del tramo cuando el ECP no cuadra con el ERI.**
+- Caso: H-ECP1 (5 casos a mano). El 03c ahora ubica también "aumento de activo neto después de distribución" en el ERI (`resultado_eri_despues`, 95,1% ubicado).
+- Decisión: si el "después" del ECP coincide con el del ERI y el "antes" no, se clasifica la forma del tramo, en este orden: `desplazada` (antes ≈ 0 y la distribución del ECP ≈ resultado), `signo` (antes = después − distribución), `compensado` (antes y distribución rebajados en el mismo monto), `antes_vacio`, `tipeo`, `digito_extra`, `otra`. Diferencia bajo materialidad → `observacion_inmaterial`. `antes_vacio` y `digito_extra` → `probable_lectura`; el resto → `probable_error_pdf`.
+- Revisión: 7/7 confirmados en las formas que quedan como error. `digito_extra` fue lectura nuestra (dígito pegado, un caso); `antes_vacio` 2 lectura + 1 PDF.
+- Límite: falso negativo conocido un caso con el resultado en la fila de distribución; por precisión primero, un cero sigue siendo lectura.
+
+### 03e – Comparativos PDF contra PDF
+
+**D-03e1. Qué compara.** Lo que el PDF de *t* informa en su columna actual contra lo que el PDF de *t+1* informa para ese año en su columna anterior, en 12 líneas: los 6 subtotales del 03b y 6 líneas del 03c (activo neto, utilidad de la operación, efectivo, saldo final, resultado antes y después de distribución). No lee PDF: usa lo que ya ubicaron el 03b y el 03c. El XML de ambos años dice qué documento cambió.
+- Clases: `cuadra`, `pdf_corregido_despues` (el PDF de *t* difiere de su XML y el comparativo de *t+1* lo corrige), `pdf_error_comparativo` (el error aparece al copiar el comparativo), `reexpresion` (cada PDF calza con su XML, pero el XML de *t+1* cambió la cifra), `otro`, `sin_xml`, `lectura`.
+- Efecto: 45.910 pares en 3.984 fondo-año; 91,3% cuadra, 8,0% lectura.
+
+**D-03e2. Huellas de lectura.** Primera corrida: las clases de error mezclaban columnas no leídas (monto en 0), un dígito de más o de menos, y el ESF 2011 (columna del balance de apertura). Regla: PDF en 0 con XML distinto de 0, o el mismo número con un dígito insertado o quitado → `lectura`; ESF 2011 en `pdf_corregido_despues` → `lectura`.
+- Efecto: `pdf_corregido_despues` 151 → 88 (64 fondo-año), `pdf_error_comparativo` 68 → 37 (25 fondo-año).
+- Límite: falso negativo conocido un caso (resultado "antes" en 0 en el PDF, error real); misma ambigüedad que `antes_vacio`.
+
+**D-03e3. Marca dudosa: se mantiene, también para "solo glosa".** Una lectura del 03c ubicada solo por glosa, o de OCR, manda el par a `lectura`. En el control (lectura con los dos PDF distintos), 2 de 6 eran errores reales. Muestra de 10 señales marcadas solo por glosa (sin OCR): 8 lectura (4 montos en 0 no leídos, 2 ESF 2011 con 3 columnas, 2 columna o cifra equivocada), 1 error real que ya ve el 03c (efectivo del ESF ≠ saldo final del EFE), 1 "antes" vacío. Se mantiene la regla.
+
+**D-03e4. Patrón de cuatro versiones.** Cada monto tiene cuatro versiones: PDF *t*, XML *t*, comparativo del PDF *t+1* y comparativo del XML *t+1*. El 03e deja `patron` (`solo_pdf_t`, `solo_pdf_t1`, `solo_xml_t`, `solo_xml_t1`, `reexpresion`, `criterio`, `otro`) y `dif_patron`, independiente de la lectura (la duda va en `motivo_t` / `motivo_t1`). A diferencia de `clase`, ve los errores del XML cuando los dos PDF coinciden.
+
+### 04b – De señales a casos
+
+**D-04b1. Un error, varias señales.** Un tipeo en el resultado del ERI aparece en utilidad, resultado antes y después de distribución e ingresos: contado por línea son cuatro hallazgos. El 04b agrupa en un caso las señales del mismo fondo-año y patrón con la misma diferencia (±2).
+- Efecto: 1.154 señales → 355 casos en 257 fondo-año (485 señales de lectura y 168 inmateriales no forman caso).
+
+**D-04b2. Familia y nivel.** `tipo` es la familia según el patrón: `pdf`, `error_xml`, `reexpresion`, `criterio`, `otro`. `subtipo` es el nivel, de lo agregado a lo fino: `error_total` (la línea ancla del estado está en el caso: activo neto, resultado del ERI, saldo final de efectivo), `error_suma` (el subtotal no suma sus líneas, `pdf_suma` del 03b), `reclasificacion` (2+ líneas del mismo estado se mueven el mismo monto y el ancla calza; en el ESF, activo y pasivo), `reclasificacion_dc` (EFE: una línea cambia, el saldo final calza y el subtotal suma: el monto fue a o desde el efecto de diferencias de cambio, que no está entre las 12 líneas), `error_linea`, `sin_ancla`, `omision` (el documento distinto trae todas las líneas del caso en 0: un comparativo omitido es un caso, aunque cada línea tenga otra diferencia; 7 casos, de hasta 12 líneas).
+- Revisión (muestra del 03e, 39 casos): subtipos de error 11/12 error del PDF; subtipos de reclasificación 18/18 "otro" (reclasificación entre líneas, con o sin nota).
+
+**D-04b3. Lado XML: revisión por lotes.** Patrón `solo_xml_t` / `solo_xml_t1`: los dos PDF coinciden y el XML es el distinto. El 07 los había marcado todos (ninguno `identico`) sin poder decir qué documento estaba mal; con el PDF como testigo, es el XML. Concentración: 115 casos en 15 administradoras, 4 concentran 86. Revisión de 3 representantes por lote (uno por subtipo): 10/10 error del XML, incluidos los subtipos de reclasificación y sin ancla. Los lotes heredan el veredicto. 
+- Convención de revisión: si cada documento cuadra y los totales calzan, una distribución distinta entre líneas es "otro"; si hay valores omitidos o montos que no corresponden, es error aunque el total compense.
+
+**D-04b4. Criterio: taxonomía distinta, no error de cifra.** Patrón `criterio`: PDF y XML distintos, igual en los dos años. 55 casos en 16 administradoras; una administradora concentra 13 casos en 11 fondos, casi todos `reclasificacion_dc`. Revisión 2/2: el XML trata distinto la diferencia de cambio y redistribuye partidas (otros ingresos, otros gastos) respecto del PDF. Se cuenta aparte de los errores.
+
+### Hallazgos
+
+**H-03e1. Errores del PDF corregidos en el comparativo del año siguiente, sin aviso visible.** El comparativo del PDF de *t+1* coincide con el XML de ambos años y el PDF de *t* no. Tipeos (un dígito, transposición), subtotales que no suman, resultado del ERI inconsistente con el ECP (H-ECP2). Seis ejemplos verificados.
+
+**H-03e2. Errores introducidos al copiar el comparativo.** El PDF de *t* está bien y su comparativo en el PDF de *t+1* no. Tipeos y glosas cruzadas. Un fondo arrastra en sus comparativos, en PDF y XML, cifras de otra versión o de otro año.
+
+**H-03e3. Reclasificaciones en el PDF que el XML no acompaña.** Montos que pasan entre operación y financiamiento, o hacia la diferencia de cambio, en el PDF de un año y no en el XML (o al revés), con el saldo final intacto. No son errores de cifra: se cuentan como inconsistencias de presentación.
+
+**H-03e4. Reexpresiones (75 casos).** Los dos documentos de *t+1* cambian la cifra de *t*; el 07 lo confirma en 75/75. La mayoría son reclasificaciones dentro del EFE. Dos con causa conocida: un fondo cambia la moneda de presentación (todas las líneas × ~856), y en 2012 tres fondos redefinen efectivo equivalente con aplicación retroactiva, con nota que dice afectar solo al EFE, aunque también cambia el efectivo del ESF (el activo neto no).
+
+**H-04b1. El XML no es espejo de un PDF que no cambió (115 casos).** Formas: comparativo del XML omitido (en 0), miles truncados (920 por 920.492), dígito mal tipeado, una distribución de beneficios que no está en ningún PDF, cifra de otro año. 48 son el XML original corregido al año siguiente y 67 el comparativo del XML de *t+1*. Cuatro administradoras concentran 86 casos.
+
+### Casos conocidos agregados
+
+- 03d: F39 2023 (signo), F40 2020 (desplazada), F41 2023 (compensado), F42 2018 (otra, PDF), F43 2015 (dígito extra, lectura).
+- 03e: F44 2021, F45 2016, F46 2017 (no cubierto: la corrección fue en el ECP), F47 2024, F48 2021 (falso negativo).
+- 04b: F44 2021, F24 2019, F49 2013, F50 2022, F51 2022.
+
+### Pendientes
+
+- Una administradora figura con un nombre genérico en años recientes de `encabezados.csv`: revisar el campo en el 02.
+- 
+- 
+- Búsqueda de notas para reexpresiones y criterio (extender `notas_continuidad.py`): encontrar la nota y contrastar el alcance que declara con las líneas que cambiaron.
+- Gráficos por año: casos apilados por tipo y por estado (tasa por 100 fondo-año, no solo conteo).

@@ -55,6 +55,29 @@ def abrir_pdf(ruta, pagina=None):
         os.startfile(ruta)              # sin pagina, pero al menos abre
 
 
+def abrir_xml(ruta):
+    """Abre el XML en VS Code (Edge no muestra los XML con caracteres fuera de su encoding declarado).
+    Los XML de la CMF vienen en una sola linea: se abre una copia indentada en la carpeta temporal
+    (el original no se toca)."""
+    if not ruta or not ruta.exists():
+        print(f"  (no existe {ruta})")
+        return
+    import tempfile
+    from xml.dom import minidom
+    try:
+        txt = minidom.parse(str(ruta)).toprettyxml(indent="  ")
+        copia = Path(tempfile.gettempdir()) / "revisar_xml" / f"{ruta.parent.parent.name}_{ruta.parent.name}_{ruta.name}"
+        copia.parent.mkdir(exist_ok=True)
+        copia.write_text("\n".join(l for l in txt.splitlines() if l.strip()), encoding="utf-8")
+        txt, ruta = None, copia
+    except Exception as e:                          # XML mal formado: se abre el original
+        print(f"  (no se pudo indentar: {e}; abro el original)")
+    try:
+        subprocess.Popen(["cmd", "/c", "code", str(ruta)])
+    except OSError:
+        os.startfile(ruta)
+
+
 def guardar(df, planilla):
     while True:
         try:
@@ -82,6 +105,7 @@ def main():
     # XML: solo las cuentas sin serie de los fondos de la planilla (se lee una vez)
     modo_03c = "identidad" in df.columns or "chequeo" in df.columns   # 03c/03d: PDF y XML por termino
     modo_03d = "chequeo" in df.columns
+    modo_comp = "pagina_t1" in df.columns       # 03e / 04b: PDF y XML de t y del comparativo de t+1
     subtotales, xml = {}, {}
     # 03d: cifras por serie del XML, para los casos de serie (el 03d no empareja nombres de series)
     ECP = {"inicio": "ActivoNetoAtribuibleALosParticipesAl01DeEnero", "aportes": "AportesDeCuotas",
@@ -135,6 +159,11 @@ def main():
               f"   (cuadra_pdf={r.get('cuadra_pdf', r.get('cuadra'))}, cuadra_xml={r.get('cuadra_xml')})")
         print(f"     {'termino':<22} {'PDF':>16} {'XML':>16}")
         tp, tx = terminos(r.get("pdf")), terminos(r.get("xml"))
+        if modo_comp:       # 'pdf_t=..' / 'xml_t=..' -> mismas claves 't', 't1'
+            tp = {re.sub(r"^pdf_", "", k): v for k, v in tp.items()}
+            tx = {re.sub(r"^xml_", "", k): v for k, v in tx.items()}
+            tp = {{"t": "anio t", "t1": "comparativo t+1"}.get(k, k): v for k, v in tp.items()}
+            tx = {{"t": "anio t", "t1": "comparativo t+1"}.get(k, k): v for k, v in tx.items()}
         for k in tp:
             marca = "  <- distinto" if k in distintos else ""
             print(f"     {k:<22} {monto(tp[k]):>16} {monto(tx.get(k)):>16}{marca}")
@@ -163,7 +192,7 @@ def main():
     casos = list(df.index) if todos else list(df.index[df["veredicto"].str.strip() == ""])
     print(f"{len(casos)} casos {'(todos)' if todos else 'pendientes'} de {len(df)}.\n  Teclas: "
           + ", ".join(f"{k}={v}" for k, v in VEREDICTOS.items())
-          + "\n  v=ver XML del envio, a=PDF anio anterior, f=PDF anio siguiente, b=volver al caso anterior,"
+          + "\n  v=ver XML en VS Code (t y t+1 en planillas de comparativos), a=PDF anio anterior, f=PDF anio siguiente, b=volver al caso anterior,"
             " s=saltar, q=guardar y salir")
 
     pos = 0
@@ -193,7 +222,15 @@ def main():
             print(f"  ya revisado: {r['veredicto']}  |  nota: {r['nota'] or '-'}")
 
         pdf = ruta_pdf(r["rut"], anio)
-        if not pdf:
+        anio_t = int(r["anio_t"]) if modo_comp and "anio_t" in r and pd.notna(r["anio_t"]) else anio
+        if modo_comp:
+            # los dos PDF involucrados: t en la pagina de la linea, t+1 en la del comparativo
+            pag_t = r["pagina_t"] if "pagina_t" in r else str(r.get("paginas", "")).split(",")[0]
+            for a_, p_ in ((anio_t, pag_t), (anio_t + 1, r.get("pagina_t1"))):
+                ruta = ruta_pdf(r["rut"], a_)
+                p_ = int(float(p_)) if pd.notna(p_) and str(p_).strip() not in ("", "<NA>", "nan") else None
+                abrir_pdf(ruta, p_) if ruta else print(f"  (sin PDF de {a_})")
+        elif not pdf:
             print("  (sin PDF en cruce_resumen)")
         elif modo_03c:
             for p in str(r.get("paginas", r.get("pagina", ""))).split(","):     # ESF y EFE pueden estar en paginas distintas
@@ -217,15 +254,18 @@ def main():
                 pos -= 1
                 break
             if k == "v":
-                rx = ruta_xml(r["rut"], anio)
-                abrir_pdf(rx) if rx else print("  (sin XML en encabezados)")   # Edge muestra el XML como arbol
-                if rx:
+                rxs = [ruta_xml(r["rut"], a_) for a_ in ((anio_t, anio_t + 1) if modo_comp else (anio,))]
+                for rx in rxs:
+                    abrir_xml(rx) if rx else print("  (sin XML en encabezados)")
+                if any(rxs):
                     print("  (en el XML: Ctrl+F con el codigo; PeriodoActual/PeriodoAnterior indican la columna)")
                 continue
             if k in ("a", "f"):
                 otro = anio - 1 if k == "a" else anio + 1
                 ruta = ruta_pdf(r["rut"], otro)
-                abrir_pdf(ruta) if ruta else print(f"  (sin PDF de {otro})")
+                pag = r.get("pagina_t1") if k == "f" else None      # 03e: pagina del comparativo
+                pag = int(pag) if pd.notna(pag) and str(pag).strip().isdigit() else None
+                abrir_pdf(ruta, pag) if ruta else print(f"  (sin PDF de {otro})")
                 continue
             if k in VEREDICTOS:
                 df.at[i, "veredicto"] = VEREDICTOS[k]

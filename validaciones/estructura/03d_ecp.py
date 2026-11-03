@@ -163,6 +163,44 @@ def leer_bloques(coords, paginas):
     return unir_tablas_apiladas([m for b in bloques for m in partir_lado_a_lado(b)])
 
 
+def tramo_distribucion(F, t, ra, e, ed):
+    """Forma del error cuando el "despues de distribucion" del ECP coincide con el del ERI y el
+    "antes" no (revision 03d_eri: 5 casos, 3 formas). None si no es el caso.
+      signo        antes = despues - distribucion (la resto en vez de sumarla): dif = 2 x distribucion
+      desplazada   resultado impreso en la fila de distribucion: antes 0, distribucion = despues
+      compensado   antes y distribucion rebajados en el mismo monto
+      tipeo        antes distinto del ERI en un digito o dos permutados
+      digito_extra antes = ERI con un digito agregado o perdido (48.465.111 vs 4.846.511)
+      antes_vacio  antes en 0 sin que la distribucion lo explique (omitido en el PDF o monto
+                   desalineado que no se leyo: revisar)
+      otra         el tramo falla, pero con otra huella"""
+    if ed is None or ed[0] is None or e[0] is None or t is None:
+        return None
+    rd = F.get("res_despues", {}).get(t)
+    if rd is None or abs(abs(rd) - abs(ed[0])) > TOL or abs(abs(ra) - abs(e[0])) <= TOL:
+        return None
+    dist_ecp = F.get("dist", {}).get(t)
+    if not dist_ecp:
+        dist_ecp = F.get("dist_partes", {}).get(t, 0)
+    d_ecp, d_eri = abs(dist_ecp or 0), abs(e[0]) - abs(ed[0])
+    if abs(ra) <= TOL and d_ecp and abs(d_ecp - abs(rd)) <= TOL:
+        return "desplazada"
+    if d_eri and abs(abs(ra) - (abs(rd) - d_eri)) <= TOL:
+        return "signo"
+    if d_ecp != d_eri and abs((abs(e[0]) - abs(ra)) - (d_eri - d_ecp)) <= TOL:
+        return "compensado"
+    if abs(ra) <= TOL:
+        return "antes_vacio"
+    if es_tipeo(ra, e[0]):
+        return "tipeo"
+    a_, b_ = str(abs(int(ra))), str(abs(int(e[0])))
+    if abs(len(a_) - len(b_)) == 1:
+        largo, corto = (a_, b_) if len(a_) > len(b_) else (b_, a_)
+        if any(largo[:i] + largo[i + 1:] == corto for i in range(len(largo))):
+            return "digito_extra"
+    return "otra"
+
+
 def desfase_filas(F):
     """Montos corridos una fila respecto de su glosa (montos alineados arriba en celdas de varias
     lineas): los aportes quedan negativos (traen los rescates) o no hay aportes pero si rescates.
@@ -407,14 +445,15 @@ def esf_activo_neto():
     return {(r.rut, r.anio, r.columna): (num(r.pdf), num(r.xml)) for r in i.itertuples()}
 
 
-def resultado_eri():
+def resultado_eri(linea="resultado_eri"):
     """(rut, anio, columna) -> (pdf, xml, metodo) del "aumento de activo neto antes de
-    distribucion" del ERI, ubicado por el 03c (lineas_03c.csv)."""
+    distribucion" del ERI (o "despues", con linea="resultado_eri_despues"), ubicado por el 03c
+    (lineas_03c.csv)."""
     ruta = DIR_PROC / "lineas_03c.csv"
     if not ruta.exists():
         return {}
     l = pd.read_csv(ruta, dtype={"rut": str})
-    l = l[l["linea"] == "resultado_eri"]
+    l = l[l["linea"] == linea]
     nn = lambda v: None if pd.isna(v) else float(v)
     return {(r.rut, r.anio, r.columna): (nn(r.pdf), nn(r.xml), r.metodo) for r in l.itertuples()}
 
@@ -432,6 +471,7 @@ def main():
               for a, g in cta.groupby("archivo")}
     esf = esf_activo_neto()
     eri = resultado_eri()
+    eri_d = resultado_eri("resultado_eri_despues")
     ruta_nc = DIR_PROC / "identidades_no_cuadra.csv"
     err_03c = set()
     if ruta_nc.exists():
@@ -590,7 +630,19 @@ def main():
                                           if x_ is not None and abs(abs(p_) - abs(x_)) > TOL),
                     "cuadra_xml": None if xr is None or e[1] is None else abs(abs(xr) - abs(e[1])) <= TOL}
             fila["clase"] = clasificar(fila, True, umbral)
-            if fila["clase"].startswith("probable_error") and fila["clase"] != "probable_error_xml":
+            forma = tramo_distribucion(b["filas"], t, ra, e, eri_d.get((r.rut, r.anio, col)))
+            if forma and fila["distintos"] == "resultado_ecp" and abs(d) <= umbral:
+                fila["clase"], fila["detalle"] = "observacion_inmaterial", f"tramo distribucion: {forma}"
+            elif forma in ("antes_vacio", "digito_extra") and fila["distintos"] == "resultado_ecp":
+                # Revision del tramo: 4 de 5 fueron lectura (monto bajo la glosa, digito pegado de la
+                # columna vecina); el quinto era una fila desplazada que no se leyo. Precision primero.
+                fila["clase"], fila["detalle"] = "probable_lectura", f"tramo distribucion: {forma}"
+            elif forma and fila["distintos"] == "resultado_ecp":
+                # El "despues" del ECP coincide con el del ERI y el "antes" no (y el XML respalda al
+                # ERI): el error esta en el tramo antes -> distribucion -> despues del PDF. Es evidencia
+                # suficiente aunque el bloque no cuadre por dentro (justamente por este error).
+                fila["clase"], fila["detalle"] = "probable_error_pdf", f"tramo distribucion: {forma}"
+            elif fila["clase"].startswith("probable_error") and fila["clase"] != "probable_error_xml":
                 if (not b["confiable"] or (b["coincide_xml"] or 0) < 0.5
                         or (fila["distintos"] == "resultado_eri" and e[2] == "solo_glosa")):
                     fila["clase"] = "probable_lectura"
@@ -643,13 +695,19 @@ def main():
     print(f"  bloques confiables (todas las filas suman al Total y el Total cuadra): {bl['confiable'].mean():.1%}")
     print(f"  bloques cuyo Total coincide con el XML en >= 50% de las filas: {(bl['coincide_xml'] >= 0.5).mean():.1%}")
     print(f"  activo neto del ESF disponible (03c): {len(esf)} fondo-anio-columna")
-    print(f"  resultado del ERI disponible (03c): {len(eri)} fondo-anio-columna")
+    print(f"  resultado del ERI disponible (03c): {len(eri)} fondo-anio-columna"
+          f" (despues de distribucion: {len(eri_d)})")
     print("\ncolumnas por bloque:", bl["n_cols"].value_counts().sort_index().to_dict())
     print("\nchequeos (filas = bloque-columna o bloque-fila):")
     r_ = ch.groupby(["chequeo", "es_total"]).agg(n=("cuadra", "size"), cuadra_pdf=("cuadra", "mean"),
                                                   cuadra_xml=("cuadra_xml", lambda s: s.dropna().astype(bool).mean()))
     print(r_.assign(cuadra_pdf=lambda d: (d.cuadra_pdf * 100).round(1),
                     cuadra_xml=lambda d: (d.cuadra_xml * 100).round(1)).to_string())
+    tr = ch[ch["detalle"].fillna("").astype(str).str.startswith("tramo distribucion")] if "detalle" in ch else ch.iloc[0:0]
+    print(f"\ntramo antes -> distribucion -> despues (ECP vs ERI): {len(tr)} fondo-anio-columna")
+    for cl, g in tr.groupby("clase"):
+        print(f"  {cl:<24} {len(g):>3}: " + ", ".join(
+            f"{k} {v}" for k, v in g["detalle"].str.split(": ").str[1].value_counts().items()))
     print("\nno cuadran, clasificados:")
     print(pd.crosstab(nc["clase"], nc["chequeo"], margins=True).to_string())
     pe = nc[nc["clase"].str.startswith("probable_error")]

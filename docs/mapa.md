@@ -50,6 +50,14 @@ flowchart TB
     SEC{{comun/secciones}} --> E07
     E07 --> CON[/continuidad_resumen.csv<br>identidades_xml.csv<br>xml_repite_anterior.csv/]
 
+    EST --> E03e[03e comparativos]
+    IDE -->|lineas_03c| E03e
+    E03e --> CMP[/comparativos_pdf.csv<br>comparativos_pdf_difieren.csv/]
+    CMP --> E04b[04b casos]
+    EST -->|pdf_suma| E04b
+    CON -->|clase del 07| E04b
+    E04b --> CAS[/casos.csv<br>casos_senales.csv/]
+
     CAN --> E06[06 ficha]
     SEC --> E06
     E06 --> FIC[/fichas Excel/]
@@ -77,6 +85,9 @@ Todo lo que está entre `/ /` vive en `CMF_HOME` (fuera del repo): `archivos/`, 
 | `03b` | 03b → 03c → 04 | tabla del 03b y hallazgo de método 1 en el README |
 | `03c` | 03c → 03d → 04 | tabla del 03c y hallazgo de método 1 en el README |
 | `03d` o `comun/lector_multicolumna.py` | 03d | casos conocidos del 03d; sección del ECP en el README |
+| `03b`, `03c` o `07` (por sus salidas) | 03e → 04b | casos conocidos del 03e y del 04b |
+| `03e` | 03e → 04b | casos conocidos del 03e; validación del 04b contra la revisión |
+| `04b` | 04b | casos conocidos del 04b; tablas del 03e/04b en el README |
 | `comun/secciones.py` | 07 (y 06 cuando generes fichas) | tabla de continuidad en el README |
 | `07` | 07 | tabla de continuidad y párrafo de las validaciones de la CMF en el README |
 | `04` | 04 | tabla del cruce espejo en el README |

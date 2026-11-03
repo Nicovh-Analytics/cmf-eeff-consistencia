@@ -102,7 +102,7 @@ Lo que encontró, verificado a mano:
 - **Cifras de series mal impresas:** un monto de una serie no cuadra ni con su columna ni con la suma de su fila, por un dígito o dos dígitos traspuestos (15 de 15 confirmados).
 - **Saldo inicial distinto del cierre del año anterior en el mismo documento**, en PDF y XML a la vez (6 casos). En uno, una nota explica que se sumó al saldo inicial el patrimonio de un fondo absorbido en marzo, cuando debió presentarse como movimiento del período; el comparativo del año anterior no se reexpresó.
 - **Otros 7 casos donde solo falla el XML** (el PDF es consistente), siempre en el arrastre del año anterior.
-- **Errores en el tramo antes de distribución → distribución → después (5 casos):** el ECP cuadra hasta el cierre y solo el cruce con el ERI lo muestra. Tres formas: la distribución restada con el signo invertido (diferencia = 2 × distribución), el resultado impreso en la fila de distribución, y "antes" y distribución rebajados en el mismo monto. En los tres el "después" y el cierre son correctos.
+- **Errores en el tramo antes de distribución → distribución → después (5 casos a mano; hoy los marca una regla, 7/7 en revisión):** el ECP cuadra hasta el cierre y solo el cruce con el ERI lo muestra. Tres formas: la distribución restada con el signo invertido (diferencia = 2 × distribución), el resultado impreso en la fila de distribución, y "antes" y distribución rebajados en el mismo monto. En los tres el "después" y el cierre son correctos.
 - **Resultado del ERI que no concilia con el ECP y se corrige en el comparativo del año siguiente** sin aviso visible (5 casos).
 - **Glosa con el año desactualizado (46 fondo-año):** "al 31 de diciembre de 2013" en el ECP de 2015, con las cifras correctas. Es la plantilla del año anterior sin actualizar.
 
@@ -122,6 +122,26 @@ Los candidatos se tipifican (discrepancia consistente, par aislado, redistribuci
 | gravedad demostrada por la regla (no requiere revisión) | 133 |
 | observación inmaterial (no se revisa) | 190 |
 | revisión manual | 284 |
+
+### Comparativos PDF contra PDF (03e) y casos (04b)
+
+Lo que un PDF informa para el año *t* se contrasta con lo que el PDF del año siguiente presenta como comparativo, en 12 líneas de los cuatro estados (los subtotales del 03b y las líneas del 03c). Con el XML de ambos años, cada monto tiene cuatro versiones, y la que no calza dice qué documento cambió.
+
+| | |
+|---|---|
+| pares línea-año comparados | 45.910 (3.984 fondo-año) |
+| los dos PDF coinciden | 91,3% |
+| tratados como lectura (OCR, línea ubicada solo por glosa, monto en 0 o un dígito de más) | 8,0% |
+
+Un mismo error aparece en varias líneas: un tipeo en el resultado se ve en la utilidad, en el resultado antes y después de distribución y en los ingresos. El 04b agrupa en un caso las señales con la misma diferencia: **1.154 señales → 355 casos**, en 257 fondo-año.
+
+| familia | casos | qué es |
+|---|---|---|
+| PDF | 97 | el PDF de *t* se corrige sin aviso en el comparativo siguiente, o el error aparece al copiar el comparativo: 49 errores de cifra, 39 reclasificaciones entre líneas, 9 sin poder decidir |
+| XML | 115 | los dos PDF coinciden y el XML no: comparativo omitido (en 0), miles truncados, dígitos, montos que no están en ningún PDF. El 07 los había marcado como comparativo modificado sin poder decir qué documento estaba mal; cuatro administradoras concentran 86 |
+| reexpresión | 75 | los dos documentos del año siguiente cambian la cifra (el 07 lo confirma en 75/75): cambio de moneda de presentación, redefinición de efectivo equivalente, reclasificaciones en el EFE |
+| criterio | 55 | PDF y XML distintos de la misma forma en ambos años: el XML clasifica distinto algunas partidas (diferencia de cambio, otros ingresos y gastos) |
+| otro | 13 | |
 
 ### Continuidad entre años (07)
 
@@ -162,6 +182,12 @@ Cada etapa que marca casos se contrastó con revisión manual del PDF original:
 | 03d, no detección | 2 errores reales en 10 casos de lectura; uno de ellos ya estaba marcado por otro chequeo del mismo fondo-año |
 | 03d, resultado del ERI = ECP | 12/34 en la primera revisión; las causas de lectura con 3 o más casos se corrigieron y quedan 18 marcados |
 | 03d, glosa desactualizada | 7/7 (el comparativo que dice el año actual resultó lectura, 3/3, y se excluye) |
+| 03d, tramo antes → distribución → después | 7/7 (antes vacío y dígito de más se tratan como lectura; 1 falso negativo conocido) |
+| 03e/04b, errores de cifra del PDF | 11/12 (muestra de 39 casos) |
+| 03e/04b, reclasificaciones entre líneas | 18/18 |
+| 04b, familia XML | 10/10 (3 representantes por lote; 4 lotes con 86 de 115 casos) |
+| 04b, criterio | 2/2 (lote de 13 casos) |
+| 03e, no detección | 2 errores reales en 6 lecturas con los PDF distintos; de las marcadas solo por glosa, 1/10 |
 
 ¹ Esa muestra (37 casos) también se usó para corregir el lector: 16 eran lectura nuestra, por 4 causas que se corrigieron. La cifra es en muestra.
 
@@ -186,11 +212,14 @@ Con eso, el ruido de lectura cayó a la mitad y la ubicación de subtotales subi
 
 **5. Una regla de lectura puede abrir una puerta y cerrar otra.** Para leer el saldo inicial titulado "al 31 de diciembre del año anterior" (que es correcto), el 03d pasó a abrir un bloque con cualquier fila de activo neto. La cobertura subió, pero en plantillas donde la fila de inicio no se reconocía, el bloque abría con el cierre de un año y sumaba los movimientos del otro. Se notó porque los errores del PDF subieron de 40 a 53 con un patrón nuevo concentrado (saldo inicial distinto del XML). Desde entonces cada cambio de lectura se mide contra la lista de errores, no solo contra la cobertura; con la regla corregida (un cierre que viene después de movimientos no abre bloque) volvieron a 39 y la cobertura subió de 86,5% a 92,4%. Las causas que quedaban se priorizaron con una muestra del 10% por motivo, una administradora distinta por caso, y se arreglaron solo los patrones con tres o más casos en dos o más administradoras.
 
-**6. Materialidad.** Como en una auditoría real, las diferencias iguales o menores a un umbral se registran como observación pero no se revisan: 100 en fondos en pesos (montos en M$) y 1 en fondos en otra moneda. Es una sola definición (`config.py`) que usan el cruce espejo (04), la estructura (03b) y las identidades (03c).
+**6. Contar casos, no líneas, y usar un tercer documento como testigo.** El 07 marcaba un comparativo del XML modificado sin poder decir si era una reexpresión legítima o un error. Con los dos PDF como testigos, cuando ambos coinciden y el XML no, el que está mal es el XML (10/10 en revisión). Y un error en un total se repite en cada línea que lo arrastra: agrupar las señales con la misma diferencia redujo 1.154 señales a 355 casos, que es lo que se revisa y se cuenta.
+
+**7. Materialidad.** Como en una auditoría real, las diferencias iguales o menores a un umbral se registran como observación pero no se revisan: 100 en fondos en pesos (montos en M$) y 1 en fondos en otra moneda. Es una sola definición (`config.py`) que usan el cruce espejo (04), la estructura (03b) y las identidades (03c).
 
 ## Limitaciones
 
 - **PDF escaneados:** se leen con OCR (Tesseract). El 10% de los subtotales escaneados que no cuadra se trata como lectura, nunca como error, así que en esos documentos el método puede no ver un error real.
+- **Comparativos (03e/04b):** 12 líneas por fondo-año; el ECP y el detalle línea a línea todavía no entran a los casos. Lo que el 03c marca como dudoso (OCR o línea ubicada solo por glosa) se trata como lectura: de las marcadas por glosa, 1 de 10 era un error real.
 - **ECP:** se lee el 92,4% de los fondo-año (97,6% de los legibles; 236 son PDF escaneados sin OCR de la página del ECP). Las series no se comparan con el XML una a una (sus nombres no coinciden entre documentos); una serie mal impresa se detecta solo cuando rompe a la vez su columna y la suma de su fila.
 - **2011:** algunas plantillas del primer año NIIF tienen un encabezado que el lector aún no reconoce; esos casos quedan como lectura, no como error.
 - **Solo fondos vigentes** (sesgo de supervivencia) y **solo el último envío** de cada fondo-año (los reenvíos no son observables).
