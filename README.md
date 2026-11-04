@@ -71,8 +71,8 @@ El 03b verifica que cada subtotal sea la suma de sus líneas. No ve un error en 
 | identidad | filas evaluadas | el PDF cuadra |
 |---|---|---|
 | total activo − total pasivo = activo neto atribuible a partícipes (ESF) | 8.659 | 99,5% |
-| total ingresos − total gastos = utilidad de la operación (ERI) | 8.288 | 99,3% |
-| efectivo y equivalente (ESF) = saldo final de efectivo (EFE) | 8.232 | 98,8% |
+| total ingresos − total gastos = utilidad de la operación (ERI) | 8.290 | 99,3% |
+| efectivo y equivalente (ESF) = saldo final de efectivo (EFE) | 8.232 | 99,0% |
 
 Las identidades se comprobaron primero en el XML: cuadran en 99,7%–100% de los casos, así que una falla no se debe a una identidad mal planteada. Cuando no cuadra, el XML hace de tercer punto: si un solo término del PDF difiere del XML y el XML cuadra, el error es del PDF; si el PDF cuadra y el XML no, el error es del XML.
 
@@ -129,15 +129,15 @@ Lo que un PDF informa para el año *t* se contrasta con lo que el PDF del año s
 
 | | |
 |---|---|
-| pares línea-año comparados | 45.910 (3.984 fondo-año) |
+| pares línea-año comparados | 46.104 (3.984 fondo-año) |
 | los dos PDF coinciden | 91,3% |
 | tratados como lectura (OCR, línea ubicada solo por glosa, monto en 0 o un dígito de más) | 8,0% |
 
-Un mismo error aparece en varias líneas: un tipeo en el resultado se ve en la utilidad, en el resultado antes y después de distribución y en los ingresos. El 04b agrupa en un caso las señales con la misma diferencia: **1.154 señales → 355 casos**, en 257 fondo-año.
+Un mismo error aparece en varias líneas: un tipeo en el resultado se ve en la utilidad, en el resultado antes y después de distribución y en los ingresos. El 04b agrupa en un caso las señales con la misma diferencia: **1.147 señales → 351 casos**, en 254 fondo-año.
 
 | familia | casos | qué es |
 |---|---|---|
-| PDF | 97 | el PDF de *t* se corrige sin aviso en el comparativo siguiente, o el error aparece al copiar el comparativo: 49 errores de cifra, 39 reclasificaciones entre líneas, 9 sin poder decidir |
+| PDF | 93 | el PDF de *t* se corrige sin aviso en el comparativo siguiente, o el error aparece al copiar el comparativo: 48 errores de cifra, 40 reclasificaciones entre líneas, 5 sin poder decidir |
 | XML | 115 | los dos PDF coinciden y el XML no: comparativo omitido (en 0), miles truncados, dígitos, montos que no están en ningún PDF. El 07 los había marcado como comparativo modificado sin poder decir qué documento estaba mal; cuatro administradoras concentran 86 |
 | reexpresión | 75 | los dos documentos del año siguiente cambian la cifra (el 07 lo confirma en 75/75): cambio de moneda de presentación, redefinición de efectivo equivalente, reclasificaciones en el EFE |
 | criterio | 55 | PDF y XML distintos de la misma forma en ambos años: el XML clasifica distinto algunas partidas (diferencia de cambio, otros ingresos y gastos) |
@@ -212,14 +212,17 @@ Con eso, el ruido de lectura cayó a la mitad y la ubicación de subtotales subi
 
 **5. Una regla de lectura puede abrir una puerta y cerrar otra.** Para leer el saldo inicial titulado "al 31 de diciembre del año anterior" (que es correcto), el 03d pasó a abrir un bloque con cualquier fila de activo neto. La cobertura subió, pero en plantillas donde la fila de inicio no se reconocía, el bloque abría con el cierre de un año y sumaba los movimientos del otro. Se notó porque los errores del PDF subieron de 40 a 53 con un patrón nuevo concentrado (saldo inicial distinto del XML). Desde entonces cada cambio de lectura se mide contra la lista de errores, no solo contra la cobertura; con la regla corregida (un cierre que viene después de movimientos no abre bloque) volvieron a 39 y la cobertura subió de 86,5% a 92,4%. Las causas que quedaban se priorizaron con una muestra del 10% por motivo, una administradora distinta por caso, y se arreglaron solo los patrones con tres o más casos en dos o más administradoras.
 
-**6. Contar casos, no líneas, y usar un tercer documento como testigo.** El 07 marcaba un comparativo del XML modificado sin poder decir si era una reexpresión legítima o un error. Con los dos PDF como testigos, cuando ambos coinciden y el XML no, el que está mal es el XML (10/10 en revisión). Y un error en un total se repite en cada línea que lo arrastra: agrupar las señales con la misma diferencia redujo 1.154 señales a 355 casos, que es lo que se revisa y se cuenta.
+**6. Contar casos, no líneas, y usar un tercer documento como testigo.** El 07 marcaba un comparativo del XML modificado sin poder decir si era una reexpresión legítima o un error. Con los dos PDF como testigos, cuando ambos coinciden y el XML no, el que está mal es el XML (10/10 en revisión). Y un error en un total se repite en cada línea que lo arrastra: agrupar las señales con la misma diferencia redujo 1.147 señales a 351 casos, que es lo que se revisa y se cuenta.
 
-**7. Materialidad.** Como en una auditoría real, las diferencias iguales o menores a un umbral se registran como observación pero no se revisan: 100 en fondos en pesos (montos en M$) y 1 en fondos en otra moneda. Es una sola definición (`config.py`) que usan el cruce espejo (04), la estructura (03b) y las identidades (03c).
+**7. Cada cambio de lectura se mide contra la lista de errores, no solo contra la cobertura.** Antes y después de cada regla se compara qué líneas se ubican, qué errores aparecen o desaparecen y qué casos cambian. Un ejemplo: en una plantilla, el último dígito de cada monto venía apilado en una sola palabra y la columna del año anterior se leía como actual. La primera reparación sacó seis artefactos de lectura, pero creó dos errores falsos en otra plantilla, donde los glifos duplicados para simular negrita tenían una forma parecida. Se acotó dos veces, hasta que dejó de abrir errores. Con ese control, el resultado del ERI ubicado subió de 4.255 a 4.346 fondo-año y los casos bajaron de 355 a 351 (cuatro eran lectura nuestra), sin errores nuevos.
+
+**8. Materialidad.** Como en una auditoría real, las diferencias iguales o menores a un umbral se registran como observación pero no se revisan: 100 en fondos en pesos (montos en M$) y 1 en fondos en otra moneda. Es una sola definición (`config.py`) que usan el cruce espejo (04), la estructura (03b) y las identidades (03c).
 
 ## Limitaciones
 
 - **PDF escaneados:** se leen con OCR (Tesseract). El 10% de los subtotales escaneados que no cuadra se trata como lectura, nunca como error, así que en esos documentos el método puede no ver un error real.
 - **Comparativos (03e/04b):** 12 líneas por fondo-año; el ECP y el detalle línea a línea todavía no entran a los casos. Lo que el 03c marca como dudoso (OCR o línea ubicada solo por glosa) se trata como lectura: de las marcadas por glosa, 1 de 10 era un error real.
+- **ERI con montos de 1–2 dígitos** (unos 40 fondo-año casi sin actividad): las columnas no se forman y el ERI no se ubica. Cualquier diferencia ahí sería inmaterial.
 - **ECP:** se lee el 92,4% de los fondo-año (97,6% de los legibles; 236 son PDF escaneados sin OCR de la página del ECP). Las series no se comparan con el XML una a una (sus nombres no coinciden entre documentos); una serie mal impresa se detecta solo cuando rompe a la vez su columna y la suma de su fila.
 - **2011:** algunas plantillas del primer año NIIF tienen un encabezado que el lector aún no reconoce; esos casos quedan como lectura, no como error.
 - **Solo fondos vigentes** (sesgo de supervivencia) y **solo el último envío** de cada fondo-año (los reenvíos no son observables).

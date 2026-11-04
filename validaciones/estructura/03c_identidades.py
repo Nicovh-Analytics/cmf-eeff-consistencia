@@ -79,14 +79,20 @@ LINEAS = {
     # distribucion de beneficios"); sin mirar la linea siguiente no se distingue antes/despues.
     "resultado_eri": dict(
         estado="ERI", corta_ecp=True, siguientes=True,
-        glosa=re.compile(r"(aumento|disminuci).*activos?netos?.*antes(de(la)?)?distribu"),
+        glosa=re.compile(r"(aumento|disminuci).*(activos?|patrimonio)netos?.*antes(de(la)?)?distribu"),
+        # Respaldo por posicion (diag_cobertura_lineas: 146 sin glosa, 25 AGF): la glosa partida en
+        # 3+ lineas o con el texto desordenado no trae "antes de distribucion" junto al monto.
+        # El "antes" es la linea de aumento de activo (o patrimonio) neto que precede a la fila de
+        # distribucion de beneficios. Solo se acepta si calza con el XML (posicion_y_valor).
+        general=re.compile(r"(aumento|disminuci).*(activos?|patrimonio)netos?"),
+        antes_de=re.compile(r"^distribu"),
         codigos=["AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios"],
         patron_codigo=r"^AumentoDisminucionDeActivoNeto.*AntesDeDistribucion"),
     # Para el 03d (tramo antes -> distribucion -> despues): misma logica, "despues de distribucion".
     # Fondos sin distribucion a veces imprimen una sola linea: entonces no se ubica y no importa.
     "resultado_eri_despues": dict(
         estado="ERI", corta_ecp=True, siguientes=True,
-        glosa=re.compile(r"(aumento|disminuci).*activos?netos?.*despu[eé]s(de(la)?)?distribu"),
+        glosa=re.compile(r"(aumento|disminuci).*(activos?|patrimonio)netos?.*despu[eé]s(de(la)?)?distribu"),
         codigos=["AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios"],
         patron_codigo=r"^AumentoDisminucionDeActivoNeto.*DespuesDeDistribucion"),
 }
@@ -153,17 +159,51 @@ def lineas_pagina(coords, p, cache, corta_ecp=False):
                 sig.append(g2)
             out.append((norm(previa.replace("\x00", " ") + " " + g), norm(g), a, b, p,
                         norm(" ".join([previa.replace("\x00", " "), g] + sig))))
-            previa = ""
+            # Guion suelto en la 1a linea de una glosa partida (como D-ECP3 en el ECP): "Aumento ...
+            # originadas  -" / "por actividades ... antes de distribucion  2.313.023". La fila en
+            # cero se emite igual, pero su glosa pasa como previa a la siguiente. Solo en el
+            # resultado del ERI (corta_ecp): en otras lineas una fila en cero arrastrada podria
+            # hacer calzar dos candidatas.
+            previa = g if (corta_ecp and not a and not b) else ""
         cache[(p, corta_ecp)] = out
     return cache[(p, corta_ecp)]
 
 
+RE_ROTULO = re.compile(r"(total|utilidad|flujo|saldo|distribu|aumento|disminu|activo|pasivo|efectivo|impuesto"
+                       r"|resultado|ingreso|gasto|comisi|cambio|diferencia|interes|otros?|patrimonio)")
+
+
 def ubicar(lineas, rx, x_act, x_ant, siguientes=False):
     cand = [l for l in lineas if rx.search(l[1]) or rx.search(l[0]) or (siguientes and rx.search(l[5]))]
+    calza = lambda l: ((x_act and abs(abs(l[2] or 0) - abs(x_act)) <= TOL)
+                       or (x_ant and abs(abs(l[3] or 0) - abs(x_ant)) <= TOL))
     for l in cand:
-        if (x_act and abs(abs(l[2]) - abs(x_act)) <= TOL) or (x_ant and abs(abs(l[3]) - abs(x_ant)) <= TOL):
+        if calza(l):
             return l, "glosa_y_valor"
+    # Glosa en una fila con guiones y montos en la vecina (diag_ceros: 70 lecturas con las dos
+    # columnas en 0 y el monto del XML en la pagina). Solo se toma la vecina si calza con el XML:
+    # no agrega deteccion, pero saca esas lineas de la lectura dudosa.
+    # Solo la fila de ABAJO y solo si es continuacion (su glosa no empieza con un rotulo propio):
+    # la de arriba suele ser la utilidad, con el mismo monto, y taparia un "antes" omitido en el
+    # PDF (forma antes_vacio, que puede ser error real).
+    if len(cand) == 1 and not cand[0][2] and not cand[0][3] and (x_act or x_ant):
+        j = lineas.index(cand[0]) + 1
+        if j < len(lineas) and not RE_ROTULO.match(lineas[j][1]) and calza(lineas[j]):
+            return lineas[j], "vecina_y_valor"
     return (cand[0], "solo_glosa") if len(cand) == 1 else (None, None)
+
+
+def ubicar_por_posicion(lineas, general, siguiente, x_act, x_ant):
+    """La linea que calza con `general` y va justo antes de una linea cuya glosa empieza con
+    `siguiente` (p.ej. el resultado antes de distribucion, antes de "Distribucion de beneficios")."""
+    cand = [x for x, y in zip(lineas, lineas[1:]) if general.search(x[0]) and siguiente.search(y[1])]
+    if len(cand) != 1:
+        return None, None
+    x = cand[0]
+    ok = (x_act and abs(abs(x[2]) - abs(x_act)) <= TOL) or (x_ant and abs(abs(x[3]) - abs(x_ant)) <= TOL)
+    # Solo con el valor del XML: sin el, la posicion sola eligio lineas equivocadas (1a corrida:
+    # +19 resultado_eri de lectura en el 03d) y como solo_glosa tampoco habria detectado errores.
+    return (x, "posicion_y_valor") if ok else (None, None)
 
 
 def es_espaciada(coords, p):
@@ -240,6 +280,12 @@ def main():
                 l, metodo = ubicar(lineas_pagina(coords, p, cache, corta_ecp=True), cfg["glosa"], xa, xb, sig)
                 if l is None:
                     l, metodo = ubicar(lineas_pagina(coords, p + 1, cache, corta_ecp=True), cfg["glosa"], xa, xb, sig)
+                if l is None and "antes_de" in cfg:
+                    for q in (p, p + 1):
+                        l, metodo = ubicar_por_posicion(lineas_pagina(coords, q, cache, corta_ecp=True),
+                                                        cfg["general"], cfg["antes_de"], xa, xb)
+                        if l is not None:
+                            break
             else:
                 lin = lineas_pagina(coords, p, cache) + lineas_pagina(coords, p + 1, cache)
                 l, metodo = ubicar(lin, cfg["glosa"], xa, xb, sig)

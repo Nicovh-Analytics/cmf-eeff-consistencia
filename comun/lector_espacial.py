@@ -15,6 +15,7 @@ NO usa el XML: la columna de cada monto se decide por su posicion.
      prefiriendo filas que ya tienen montos (glosa partida en dos lineas).
   5. Continuaciones de glosa en minuscula sin montos se unen a la fila anterior.
   6. Montos con formato irregular ("(3.021424)", "((31.340.008.234)") se reportan.
+  0. Al cargar: digitos finales apilados en una sola palabra (comun/reparar_palabras.py).
 
 Parametros medidos sobre PDFs reales de distintas plantillas de AGF.
 """
@@ -24,6 +25,7 @@ import json
 import re
 from pathlib import Path
 from config import CMF_HOME
+from comun.reparar_palabras import reparar_apilados
 
 RE_CONTINUACION = re.compile(r"^[a-záéíóúñ][^\d]{0,40}$")
 DIR_COORDS = CMF_HOME / "coords_pdf"
@@ -279,4 +281,9 @@ def cargar_coords(rut, anio, pdf):
     if o and o.get("paginas"):
         d = d or {"pdf": pdf, "error": None, "paginas": {}}
         d["paginas"].update({p: normalizar_ocr(v) for p, v in o["paginas"].items()})
+    if d:
+        # Ultimo digito de cada monto apilado en una palabra de la fila de arriba (BICE 2023-2025;
+        # paginas espaciadas de BICE cuadraban 93,1% vs 97,7-100% en otras AGF). Ver reparar_palabras.
+        for pg in d["paginas"].values():
+            pg["palabras"] = reparar_apilados(pg["palabras"])
     return d
