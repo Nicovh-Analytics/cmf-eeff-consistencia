@@ -500,3 +500,46 @@ F32 2016, F33 2015, F34 2014 (lado a lado), F35 2023 (texto espaciado), F36 2025
 - 
 - Búsqueda de notas para reexpresiones y criterio (extender `notas_continuidad.py`): encontrar la nota y contrastar el alcance que declara con las líneas que cambiaron.
 - Gráficos por año: casos apilados por tipo y por estado (tasa por 100 fondo-año, no solo conteo).
+
+## Cobertura de lectura: resultado del ERI, ceros y dígitos apilados (2026-11-03)
+
+Sesión de cobertura guiada por el esquema de casos del 04b: la tabla de cobertura del ancla mostró dónde faltaba el par t / t+1 y cada cambio se midió contra la lista de errores con `comparar_corridas.py` (foto antes, diff después: líneas ubicadas, `probable_error*` nuevos o perdidos en 03c y 03d, casos del 04b). Resultado: resultado del ERI ubicado 4.255 → 4.346 fondo-año; ERI sin par en el 03e 244 → 141; ancla limpia ERI 86,5% → 88,5%, ESF 89,2% → 89,3%, EFE 88,7% → 88,8%; lectura del 03c 78 → 60; casos del 04b 355 → 351 (salen 4 artefactos de lectura, no entra ninguno). Cero errores nuevos en todos los pasos.
+
+### Decisiones de lectura
+
+**D-ECP13. Resultado del ERI: cuatro reglas en el 03c (`03c_identidades.py`).** Diagnóstico por motivo (`diag_cobertura_lineas.py`): 146 sin glosa, 63 sin página, 35 sin glosa con OCR.
+- **Patrimonio neto.** La regex del resultado antes y después de distribución acepta "activo neto" o "patrimonio neto" (una plantilla).
+- **Posición, solo con el XML.** Si no hay candidata por glosa, el "antes" es la única línea de aumento de activo (o patrimonio) neto justo antes de "Distribución de beneficios" (página del ERI y la siguiente, sin pasar del título del ECP). Primera versión: sin el valor del XML quedaba como `solo_glosa`; subió en 16 la lectura del 03d (líneas equivocadas) y no detectaba nada. Se acepta solo si calza con el XML (`posicion_y_valor`, 36 casos).
+- **Guion suelto en la primera línea de una glosa partida** (como D-ECP3 en el ECP): "Aumento … originadas  -" / "por actividades … antes de distribución  2.313.023" (un fondo). La fila en cero se emite, pero su glosa pasa como previa a la siguiente. Solo en el resultado del ERI: en otras líneas, una fila en cero arrastrada podría hacer calzar dos candidatas.
+- **Fila vecina, solo hacia abajo y con el XML.** La única candidata en 0 en las dos columnas toma la fila de abajo si es continuación (su glosa no empieza con un rótulo propio) y calza con el XML (`vecina_y_valor`, 18). No la de arriba: suele ser la utilidad, con el mismo monto, y taparía un "antes" omitido en el PDF (forma `antes_vacio`, que puede ser error real). No agrega detección: saca líneas de la lectura dudosa.
+- Efecto: +91 resultados ubicados (4.255 → 4.346); lectura del chequeo `resultado_eri` del 03d 101 → 117 con la primera versión de la posición, 105 al final.
+
+**D-LE1. Dígitos finales apilados (`comun/reparar_palabras.py`, aplicado en `cargar_coords`).**
+- Caso: una plantilla de 2023–2025: texto letra por letra; el último dígito de cada monto de una columna viene como UNA palabra de k dígitos con el ancho de un carácter ("28776" en 5 pt). Sin ese dígito los montos no forman columna y la del año anterior se lee como actual (activo neto "actual" = cifra del año anterior). Las páginas espaciadas de esa AGF cuadraban 93,1%; las de otras AGF, 97,7–100%.
+- Decisión: repartir los dígitos, en orden de altura, entre las filas de esa columna cuyo monto termina justo a la izquierda y está incompleto (último grupo de 1–2 dígitos, "3.150.44", o corto sin separador). Condiciones: ancho por dígito < 1,8 pt; receptoras seguidas (≤ 30 pt) y la primera a ≤ 30 pt; al menos una con separador de miles incompleto; exactamente k receptoras.
+- Tres iteraciones, cada una medida con el diff:
+  1. Ancho < 2,5 pt y receptoras = las k filas siguientes: sacó 6 artefactos del 04b, pero actuaba en otras AGF (glifos duplicados para simular negrita, ~2 pt por dígito) y repartía a filas a 140 pt: 2 `probable_error_pdf` falsos en el ECP (dos fondos).
+  2. Ancho < 1,6 pt, primera receptora = fila de la apilada, saltos ≤ 20 pt: sin errores falsos, pero un fondo entró como caso nuevo: la primera receptora era un monto completo (83.797) y el dígito corrió.
+  3. Receptoras solo entre montos incompletos y ancho < 1,8 pt (había otra palabra apilada de 1,67 pt por dígito en la misma página): limpio.
+- Efecto: actúa en 37 fondo-año (tres administradoras); lectura del 03c 78 → 60; salen del 04b cuatro casos, todos lectura nuestra.
+- Límite: la primera versión también bajaba en 47 la lectura de `transacciones` del ECP (otras plantillas): probablemente dígitos apilados con otra forma (más anchos o en tablas de muchas columnas). No se recupera sin una regla propia: venía con errores falsos.
+
+**D-COB1. Lectura en 0: se mantiene la regla.** `diag_ceros.py`: 221 lecturas en 0 con el XML distinto de 0 (111 fondo-año); en 66% el monto está en la página. Muestra de 12 al azar: 10 lectura nuestra, 2 errores reales del PDF (dos montos no digitados), y los dos ya los detecta el 03c por la identidad. La regla "cero = lectura" del 03e no pierde hallazgos.
+
+**D-COB2. ERI sin página: montos de 1–2 dígitos (inmaterial).** 63 fondo-año sin página del ERI en el 03b (`diag_pagina_eri.py`): 38 tienen el ERI con montos mínimos (mediana del mayor monto: 24 miles; 2 sobre 100). Columnas de 1–2 dígitos no forman franja (como D-ECP2, pero con las dos columnas chicas) y la búsqueda por valor calza en cualquier parte. No se amplía: cualquier diferencia sería inmaterial. El resto: totales en 0 en el XML (el PDF imprime guiones) y PDF sin texto.
+
+### Lo que queda sin par en el ERI (141)
+ERI de montos mínimos (~38, inmaterial); `sin_glosa` 51 (parte son PDF sin la línea "antes": nada que leer); `sin_glosa_ocr` 20 (OCR 2011–2012); ambiguas 7; resto disperso.
+
+### Herramientas
+`comparar_corridas.py` (foto / diff), `diag_cobertura_lineas.py`, `diag_pagina_eri.py`, `diag_ceros.py`, `diag_apilados.py`, `diag_lineas.py` (ahora acepta `p=N` y líneas no ubicadas), `muestra_ceros.py`.
+
+### Casos conocidos agregados
+- 03c: F52 2025 y F47 2023 (dígitos apilados: todas las identidades cuadran).
+- 03d: F53 2014 (guion suelto en el resultado del ERI: `resultado_eri` cuadra).
+
+### Pendientes
+- Dígitos apilados con otra forma en el ECP (otras plantillas).
+- Plantilla con la glosa del resultado terminada en "…originado" sin el "antes" (dos administradoras).
+- Pico de 47 lecturas en 0 en 2017 sin revisar; grupo de 2011–2013 con las dos columnas en 0 y la fila vecina sin confirmar.
+- Primera letra de la glosa perdida en las páginas espaciadas de una plantilla (no afecta las líneas buscadas).
