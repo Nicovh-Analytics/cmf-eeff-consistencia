@@ -543,3 +543,79 @@ ERI de montos mínimos (~38, inmaterial); `sin_glosa` 51 (parte son PDF sin la l
 - Plantilla con la glosa del resultado terminada en "…originado" sin el "antes" (dos administradoras).
 - Pico de 47 lecturas en 0 en 2017 sin revisar; grupo de 2011–2013 con las dos columnas en 0 y la fila vecina sin confirmar.
 - Primera letra de la glosa perdida en las páginas espaciadas de una plantilla (no afecta las líneas buscadas).
+
+## 04c – Conteo único de casos (2026-11-04/05)
+
+Objetivo: que cada error (o inconsistencia de presentación) cuente una vez aunque lo marquen varias etapas y varias líneas. Junta las señales de 03b, 03c, 03d, 04 (cruce espejo, al detalle), 04b y 07 en una tabla común y las agrupa en casos. Base para los gráficos por año / tipo / estado y para la revisión de notas por caso. Diseño: `verificacion/diseno_casos_unicos.md`.
+
+Resultado: **9.867 señales → 758 casos en 593 fondo-año; 332 errores en 276 fondo-año.**
+
+| tipo | casos |
+|---|---|
+| error_PDF | 189 |
+| error_XML | 62 |
+| error_continuidad (identidad del XML rota) | 56 |
+| error_PDF/XML (difieren; sin documento atribuible) | 19 |
+| error_PDF+XML | 6 |
+| reclasificacion | 89 |
+| reexpresion | 75 |
+| desglose (PDF y XML desglosan distinto; subtotal o cierre igual) | 69 |
+| criterio | 55 |
+| rotulo | 52 |
+| glosa | 46 |
+| agregacion_xml | 40 |
+
+### Decisiones
+
+**D-CU1. Unidad: la celda.** Una cifra se identifica por dónde está impresa: `rut`, `anio_doc`, `documento` (PDF / XML / PDF+XML / PDF/XML = difieren sin saber cuál / ? = sin resolver), `columna` (actual / anterior). La columna "anterior" del PDF de t+1 y el comparativo que mira el 03e para t son la misma celda.
+
+**D-CU2. Señal.** Una fila por etapa y cifra con clase `error`, `presentacion`, `lectura`, `inmaterial` o `revisar`. Solo `error` y `presentacion` forman casos; `lectura` e `inmaterial` quedan como contexto (cota superior: 5.809 señales de lectura en 1.120 fondo-año, si todas fueran error). `revisar` y las de documento `?` o `PDF/XML` se pegan a un caso existente de la misma celda y diferencia; si no hay, las del 04 forman caso propio y las demás quedan sin resolver (03b distinto del XML sin pareja: 283 señales en 115 fondo-año).
+
+**D-CU3. Agrupación.**
+- Misma celda y |dif| igual (± 2): un caso, aunque cruce líneas y estados (un tipeo en el resultado aparece en el 03b, el 03c, el 03d y el 04).
+- Los casos del 04b se mantienen (un caso del 04b = un caso) con union-find sobre su `caso_id`: la omisión de un comparativo en el XML (un fondo) son 12 líneas y un caso.
+- Rótulo y glosa: un caso por fondo-año (es la plantilla, no cada celda). El rótulo del 04 (`rotulo_incorrecto`) se une al del 03d (un fondo: un caso con las dos fuentes).
+- 07 solo: las identidades del XML rotas en la misma celda se juntan en un caso; las "por serie" quedan en `revisar`.
+
+**D-CU4. Tipo y raíz.** La raíz es la señal más fina (línea > subtotal > total > identidad); con otras fuentes, el 04 no define ni la raíz ni el documento (solo dice que PDF y XML difieren). `error_continuidad` cuando la única fuente es el 07.
+
+**D-CU5. 03b distinto del XML.** Si el subtotal impreso es igual al XML y otra fuente no lo confirma, el `probable_error` del 03b baja a `revisar` (revisión: 2 de 4 casos solo-03b eran una línea mal leída por nosotros). Siguen como error `linea_distinta`, `linea_no_sumada` y `tipeo` (error de una línea con el total bien).
+
+**D-CU6. 04 al detalle.** Cada cifra del XML no encontrada en el PDF, emparejada con el huérfano del PDF más cercano a ≤ 1% (reglas de par del 04), solo si explica el `delta_principal` del candidato (± 2). Sin ese filtro: 821 señales y 363 casos solo-04, casi todos montos parecidos por coincidencia. Inmaterial bajo el umbral o `dif_menor`; `agregacion_xml` y `rotulo_incorrecto` → presentación.
+
+**D-CU7. Estado de las señales del 04 por `comun/secciones.py`.** El `estado_financiero()` del 04 clasifica por palabras clave: 13 códigos quedaban en otro estado (p.ej. `OtrosIngresosDeOperacion` → ERI; `ColocacionDeCuotasEnCirculacion` → ECP por "cuotas"). Se usa el mapa del XML y solo si el código no está, la clasificación del 04. Cambia la distribución por estado, no el conteo. Pendiente: corregirlo en el propio 04.
+
+**D-CU8. Desglose en subtotales (`compensa_subtotal`).** Revisión de casos solo-04 (10): 1 error confirmado; la mayoría eran el PDF y el XML desglosando distinto las mismas líneas (montos recibidos de la administradora dentro de venta/cobro, diferencia de cambio junto al valor razonable, compra e intereses compensados). Si la línea es parte de un subtotal del 03b que en el PDF suma sus líneas, es igual al XML y en el XML suma sus partes (desde `cuentas.csv`: el `cruce_detalle` no trae subtotales ni todas las partes), la diferencia se compensa dentro del subtotal → `desglose` (presentación). 67 señales; 1 queda como error porque el XML no suma.
+
+**D-CU9. Documento del ECP por las identidades de cada uno (`ecp_documento`).** Segunda muestra solo-04 (10): 9 eran ECP por serie con PDF ≠ XML. Para cada señal del 04 en el ECP, en esa serie y columna:
+- XML: aportes − |rescates| = neto; inicio + neto + resultado después = cierre (desde `cuentas.csv`).
+- PDF: la columna del 03d (`ecp_chequeos`) que contiene el monto huérfano (el 03d nombra las columnas serie_1, serie_2…, no por la serie del XML).
+
+| XML | PDF | resultado |
+|---|---|---|
+| no cuadra | cuadra o sin lectura | error XML |
+| cuadra | no cuadra | error PDF |
+| — | solo falla un rótulo (la fila "transacciones" trae el inicio sumado) | rótulo |
+| cuadra | cuadra; neto igual, o cierre e inicio iguales | desglose |
+| cuadra | cuadra; el inicio no es el cierre anterior (continuidad de la serie o, si el 03d no la tiene, del total) | error PDF |
+| resto | | sigue PDF/XML |
+
+Cierre igual con inicio distinto no es desglose: la diferencia se compensó contra el inicio (un fondo: el PDF parte de saldos que no son el cierre anterior; el XML sí; el 03d marcó la continuidad del total como lectura).
+
+### Precisión medida
+
+| muestra | casos | resultado |
+|---|---|---|
+| errores por fuente única y multi (`revision_04c`) | 27 | 24 reales; 07: 8/8 (la mitad también en el PDF → `error_continuidad`); multi: 4/4 un solo error |
+| solo-04, 1ª (`revision_04c_04`) | 10 | 1 error confirmado, 2 posibles, 7 desglose → D-CU8 |
+| solo-04, 2ª | 10 | ECP por serie → D-CU9; 2 errores PDF confirmados |
+| ramas del ECP (`revision_04c_ecp`) | 8 | desglose 4/4 sin error de cierre; PDF no cuadra 2/4 errores, 1 rótulo (→ regla), 1 fusión |
+
+### Casos conocidos (`casos_conocidos.csv`, etapa 04c)
+un fondo: 1 caso error_PDF raíz ERI · otro: error_PDF en el comparativo · otro: omisión del comparativo XML + reclasificación · otro: un rótulo · otro: sin caso.
+
+### Límites y pendientes
+- `error_PDF/XML` (19): cada documento coherente y cifras distintas, o el monto del PDF no se ubica en una sola columna del 03d.
+- Continuidad por serie: el 03d solo la mide en el total. Reorganizar series en el saldo inicial no se detecta (dos casos vistos). Propuesta: continuidad por serie en el 03d y, si varias series antiguas suman una nueva, "reorganización de series".
+- 03d: un salto en el inicio que está solo en el PDF y no en el XML queda como `probable_lectura`.
+- Revisión de notas por caso (`muestra_notas.py`) y ficha con PDF y XML lado a lado (extender `06_ficha.py`).
