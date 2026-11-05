@@ -18,18 +18,18 @@ def _monto_de_fila(w, palabras):
 
 
 def reparar_apilados(palabras, ancho_max=1.8, tol_x=3.0, salto_max=30.0):
-    """Digitos finales apilados (BICE 2023-2025): el ultimo digito de cada monto de una columna
+    """Digitos finales apilados (una plantilla de 2023-2025): el ultimo digito de cada monto de una columna
     viene como UNA palabra de k digitos, con el ancho de un solo caracter ("28776[476-481]").
     Se reparte en orden de altura entre las filas de esa columna cuyo monto termina justo a la
     izquierda (x1 ~ x0 de la palabra apilada) y esta INCOMPLETO: ultimo grupo de 1-2 digitos
     ("3.150.44") o monto corto sin separador ("51"). Un monto completo ("83.797") no recibe.
     Si no hay exactamente k filas receptoras, o no van seguidas, no se toca.
     Acotado tras dos corridas (diag_apilados):
-      - ancho por digito < 1.8 pt (BICE: 1.0-1.67, '785[477-482]' en 8819 2023; glifos duplicados
+      - ancho por digito < 1.8 pt (esa plantilla: 1.0-1.67, p.ej. '785[477-482]'; glifos duplicados
         de otras plantillas: ~2). El filtro de montos incompletos es el que protege.
       - receptoras seguidas (saltos <= 30 pt) y la primera a <= 30 pt de la palabra apilada
       - al menos una receptora con separador de miles incompleto (los cortos solos no bastan)
-      - 8819 2023: la regla anterior (1a receptora = fila de la apilada) le dio un digito al
+      - la regla anterior (1a receptora = fila de la apilada) le dio a un fondo un digito al
         efectivo completo y le quito el suyo al total de activos."""
     out = list(palabras)
     apiladas = [w for w in palabras if re.fullmatch(r"\d{2,}", w[0]) and (w[2] - w[1]) / len(w[0]) < ancho_max]

@@ -282,8 +282,8 @@ def cargar_coords(rut, anio, pdf):
         d = d or {"pdf": pdf, "error": None, "paginas": {}}
         d["paginas"].update({p: normalizar_ocr(v) for p, v in o["paginas"].items()})
     if d:
-        # Ultimo digito de cada monto apilado en una palabra de la fila de arriba (BICE 2023-2025;
-        # paginas espaciadas de BICE cuadraban 93,1% vs 97,7-100% en otras AGF). Ver reparar_palabras.
+        # Ultimo digito de cada monto apilado en una palabra de la fila de arriba (una plantilla de
+        # 2023-2025; sus paginas espaciadas cuadraban 93,1% vs 97,7-100% en otras). Ver reparar_palabras.
         for pg in d["paginas"].values():
             pg["palabras"] = reparar_apilados(pg["palabras"])
     return d
