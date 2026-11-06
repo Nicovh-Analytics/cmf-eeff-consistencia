@@ -37,8 +37,10 @@ TOL = 2
 ESTADO = {"total_activo": "ESF", "total_pasivo": "ESF", "activo_neto": "ESF", "efectivo": "ESF",
           "total_ingresos": "ERI", "total_gastos": "ERI", "utilidad_operacion": "ERI",
           "resultado_eri": "ERI", "resultado_eri_despues": "ERI",
-          "operacion": "EFE", "financiamiento": "EFE", "saldo_final": "EFE"}
-TOTAL = {"activo_neto", "resultado_eri", "resultado_eri_despues", "saldo_final", "total_activo", "total_pasivo"}
+          "operacion": "EFE", "financiamiento": "EFE", "saldo_final": "EFE",
+          "aumento_neto": "EFE", "evolucion_efectivo": "EFE"}       # identidades del EFE (03b)
+TOTAL = {"activo_neto", "resultado_eri", "resultado_eri_despues", "saldo_final", "total_activo", "total_pasivo",
+         "evolucion_efectivo"}
 NIVEL = {"linea": 0, "subtotal": 1, "total": 2, "identidad": 3}
 COLS = ["fuente", "rut", "anio_doc", "documento", "columna", "estado", "linea", "nivel", "dif", "clase",
         "forma", "detalle", "pagina"]

@@ -225,6 +225,23 @@ def buscar_agregacion(faltan_xml, sobran_pdf):
             break
     return hallazgos
 
+# Identidades internas del EFE (entre flujos, no linea a linea). partes: subtotales del EFE ya
+# ubicados o lineas sueltas (LINEAS_EFE). Se ubican como los subtotales: glosa y valor del XML;
+# si el valor no calza, por glosa unica (un aumento neto mal impreso no debe quedar fuera).
+IDENTIDADES_EFE = {
+    "aumento_neto": dict(
+        estado="EFE", codigo="AumentoNetoDeEfectivoYEfectivoEquivalente",
+        glosa=re.compile(r"(aumento|disminuci).*efectivo", re.I), partes=["operacion", "financiamiento"]),
+    "evolucion_efectivo": dict(
+        estado="EFE", codigo="SaldoFinalDeEfectivoYEfectivoEquivalente",
+        glosa=re.compile(r"saldofinal", re.I), partes=["saldo_inicial", "aumento_neto", "dif_cambio"]),
+}
+LINEAS_EFE = {
+    "saldo_inicial": ("SaldoInicialDeEfectivoYEfectivoEquivalente", re.compile(r"saldoinicial", re.I)),
+    "dif_cambio": ("DiferenciasDeCambioNetasSobreEfectivoYEfectivoEquivalente",
+                   re.compile(r"diferencias?decambio.*efectivo", re.I)),
+}
+
 
 def analizar_fondo(paginas, xml, coords):
     """paginas: paginas de estados; xml: dict (contexto, codigo) -> valor;
@@ -249,6 +266,7 @@ def analizar_fondo(paginas, xml, coords):
 
     filas = []
     usados = set()          # lineas ya tomadas como subtotal (no reutilizar)
+    ubic = {}               # subtotal -> indice de su linea (para las identidades del EFE)
     for nombre, cfg in SUBTOTALES.items():
         x_act = xml.get(("PeriodoActual", cfg["codigo"]))
         x_ant = xml.get(("PeriodoAnterior", cfg["codigo"]))
@@ -272,6 +290,7 @@ def analizar_fondo(paginas, xml, coords):
             filas.append(dict(subtotal=nombre, ubicado=False))
             continue
         usados.add(i)
+        ubic[nombre] = i
         _, s_act, s_ant, _ = planas[i]
         cortes = {abs(xml.get((c, otro["codigo"])) or 0) for otro in SUBTOTALES.values()
             if otro is not cfg and otro["estado"] == cfg["estado"]
@@ -319,6 +338,81 @@ def analizar_fondo(paginas, xml, coords):
                 faltan_xml=len(faltan), sobran_pdf=len(sobran),
                 agregacion="; ".join(buscar_agregacion(faltan, sobran)),
                 detalle=" | ".join(f"{c[0][:30]}={c[idx]}{marca(c[idx])}" for c in comp if c[idx] is not None)))
+    filas += identidades_efe(planas, lineas, xml, ubic, usados, espaciadas, ocr, irregulares)
+    return filas
+
+
+def identidades_efe(planas, lineas, xml, ubic, usados, espaciadas, ocr, irregulares):
+    """Filas de estructura_efe para IDENTIDADES_EFE, con el mismo esquema que un subtotal:
+    subtotal_pdf = total impreso, suma_lineas_pdf = suma de sus partes impresas. Busca despues
+    del primer flujo ubicado (el ESF y el ERI no entran). Sin el EFE ubicado, no hay filas."""
+    if "operacion" not in ubic and "financiamiento" not in ubic:
+        return []
+    desde = min(ubic[k] for k in ("operacion", "financiamiento") if k in ubic)
+    filas = []
+
+    def ubicar(glosa_re, codigo):
+        x_act, x_ant = xml.get(("PeriodoActual", codigo)), xml.get(("PeriodoAnterior", codigo))
+        if x_act is None:
+            return None
+        resto = planas[desde:]
+        i = ubicar_subtotal(resto, glosa_re, x_act, x_ant)
+        metodo = "glosa_y_valor"
+        if i is None:
+            cand = [k for k, (_, a, _, l) in enumerate(resto)
+                    if a is not None and k + desde not in usados and glosa_re.search(norm(l))]
+            i, metodo = (cand[0], "solo_glosa") if len(cand) == 1 else (None, None)
+        return (i + desde, metodo) if i is not None else None
+
+    pos = {k: (v, "subtotal") for k, v in ubic.items()}
+    for nombre, (codigo, glosa_re) in LINEAS_EFE.items():
+        u = ubicar(glosa_re, codigo)
+        if u:
+            pos[nombre] = u
+    for nombre, cfg in IDENTIDADES_EFE.items():
+        u = ubicar(cfg["glosa"], cfg["codigo"])
+        if not u:
+            filas.append(dict(subtotal=nombre, ubicado=False))
+            continue
+        i, metodo = u
+        pos[nombre] = u
+        codigo_de = {**{k: v["codigo"] for k, v in SUBTOTALES.items()},
+                     **{k: v[0] for k, v in LINEAS_EFE.items()},
+                     **{k: v["codigo"] for k, v in IDENTIDADES_EFE.items()}}
+        for col, idx, ctx in (("actual", 1, "PeriodoActual"), ("anterior", 2, "PeriodoAnterior")):
+            x_tot, s_pdf = xml.get((ctx, cfg["codigo"])), planas[i][idx]
+            if x_tot is None or s_pdf is None:
+                continue
+            vals, det, falta = [], [], False
+            for p in cfg["partes"]:
+                x_p = xml.get((ctx, codigo_de[p])) or 0
+                if p in pos and planas[pos[p][0]][idx] is not None:
+                    v = planas[pos[p][0]][idx]
+                elif not x_p:
+                    v = 0                       # parte en cero en el XML y sin linea: no se imprime
+                else:
+                    falta = True                # parte con valor que no se ubico: no se puede sumar
+                    continue
+                vals.append((p, v, x_p))
+                det.append(f"{p}={v}" + ("" if not v or abs(abs(v) - abs(x_p)) <= TOL else "?"))
+            if falta:
+                continue
+            suma = sum(v for _, v, _ in vals)
+            sx = sum((1 if x_p >= 0 else -1) * abs(v) if x_p else v for _, v, x_p in vals)
+            s_sx = (1 if x_tot >= 0 else -1) * abs(s_pdf)
+            nz_pdf = [abs(v) for _, v, _ in vals if v]
+            nz_xml = [abs(x) for _, _, x in vals if x]
+            filas.append(dict(
+                pagina_ocr=lineas[i][4] in ocr, subtotal=nombre, ubicado=True, columna=col,
+                pagina=lineas[i][4], pagina_espaciada=lineas[i][4] in espaciadas,
+                glosa_esperada=metodo != "valor", formato_irregular=" ".join(irregulares), metodo=metodo,
+                subtotal_pdf=s_pdf, subtotal_xml=x_tot, suma_lineas_pdf=suma,
+                pdf_suma=abs(suma - s_pdf) <= TOL, pdf_suma_signo_xml=abs(sx - s_sx) <= TOL,
+                igual_xml=abs(abs(s_pdf) - abs(x_tot)) <= TOL,
+                n_lineas_pdf=len(nz_pdf), n_lineas_xml=len(nz_xml),
+                faltan_xml=len([v for v in nz_xml if v not in nz_pdf]),
+                sobran_pdf=len([v for v in nz_pdf if v not in nz_xml]),
+                agregacion="", detalle=" | ".join(det)))
     return filas
 
 
@@ -428,6 +522,7 @@ def main():
     ok = res[res["estado"].isin(["ok", "sin_texto"])].drop(columns=["moneda"], errors="ignore").merge(enc, on=["rut", "anio"])
 
     codigos = {cfg["codigo"] for cfg in SUBTOTALES.values()} | {c for cfg in SUBTOTALES.values() for c in cfg["partes"]}
+    codigos |= {cfg["codigo"] for cfg in IDENTIDADES_EFE.values()} | {v[0] for v in LINEAS_EFE.values()}
     cta = pd.read_csv(DIR_PROC / "cuentas.csv",
                       usecols=["archivo", "contexto", "codigo", "serie", "valor"], dtype={"serie": str})
     cta = cta[cta["serie"].isna() & cta["codigo"].isin(codigos) & cta["archivo"].isin(ok["archivo"])]
