@@ -723,7 +723,7 @@ def main():
         print(f"  {rut} {anio}: {len(x_)} chequeos, {len(malos)} no cuadran" + (f": {resumen}" if resumen else ""))
         bb = bl[(bl["rut"] == rut) & (bl["anio"] == anio)]
         print("      bloques: " + (", ".join(
-            f"{b_.columna} (total {b_.total}, {b_.n_cols} col"
+            f"{b_.columna} (total {b_.total:.0f}, {b_.n_cols} col"
             + (", lado a lado" if b_.lado_a_lado else "") + (", tablas unidas" if b_.tablas_unidas else "")
             + (f", fechado {b_.fechado_por}" if b_.fechado_por != "texto" else "") + ")"
             for b_ in bb.itertuples()) or "ninguno"))
