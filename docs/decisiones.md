@@ -619,3 +619,25 @@ un fondo: 1 caso error_PDF raíz ERI · otro: error_PDF en el comparativo · otr
 - Continuidad por serie: el 03d solo la mide en el total. Reorganizar series en el saldo inicial no se detecta (dos casos vistos). Propuesta: continuidad por serie en el 03d y, si varias series antiguas suman una nueva, "reorganización de series".
 - 03d: un salto en el inicio que está solo en el PDF y no en el XML queda como `probable_lectura`.
 - Revisión de notas por caso (`muestra_notas.py`) y ficha con PDF y XML lado a lado (extender `06_ficha.py`).
+
+## 06 – Ficha de revisión en forma de estado (2026-11-05)
+
+La ficha pasa a ser el archivo de revisión de un fondo-año: rearma cada estado con lo que dice cada documento y deja las sumas como fórmulas de Excel, para revisar sin rearmar a mano.
+
+**D-FI1. Lectura por líneas.** ESF, ERI y EFE: líneas del PDF (lector espacial del 03b, páginas ubicadas por sus subtotales) emparejadas con las cuentas del XML, primero por glosa parecida y, si no, por valor. Tres bloques: coinciden por glosa (orden del estado), solo por valor (glosa del PDF al lado de la cuenta del XML) y sin coincidencia. Dif = |PDF| − |XML|; el signo distinto se anota aparte (convención de cada documento).
+
+**D-FI2. Verificación con fórmulas.** Por cada subtotal e identidad: el impreso (referencia a su celda), la suma de partes (`SUM`, o `ABS` en las identidades que restan) y la diferencia, en PDF y XML por separado. Partes del PDF: las líneas entre el subtotal anterior y el suyo, como el 03b; partes del XML: sus códigos.
+
+**D-FI3. ECP por serie.** Lado PDF desde la lectura del 03d (`ecp_chequeos`); cada columna del 03d se asocia a la serie del XML con la que comparte más valores. Verificación por serie: transacciones, evolución, suma de series = total y continuidad dentro del mismo reporte.
+
+**D-FI4. Hoja t+1 y veredicto.** Cada cifra de t frente a la misma cifra en el reporte de t+1 (columna anterior), en PDF y XML, más la continuidad cierre t = inicio t+1. Veredicto entre las cuatro versiones: 4 iguales → ok; 3 contra 1 → error en la que discrepa; 2 contra 2 → error en el grupo cuyo documento no cuadra internamente (subtotales e identidades en que participa la cifra), si el otro sí; si no, sin determinar (queda para las notas). El resumen de la hoja Fondo dice qué estados tienen error y en qué documento.
+
+**D-FI5. Cruce y huérfanos.** Las vistas del cruce (identificación numérica del 04: sabe si un monto está en el PDF, no en qué línea) solo quedan cuando no hay lectura por líneas. Huérfanos de t y t+1, del PDF con la glosa de su línea (en el ECP, la fila y serie del 03d) y del XML: es el control de cobertura del lector.
+
+**Ejemplo (un fondo).** La ficha muestra el reparto por serie del ECP errado en el PDF (3 contra 1, corregido sin nota en el comparativo del año siguiente), el resto que reaparece en las transacciones del año siguiente (el PDF no cuadra) y un aumento neto de efectivo con un dígito distinto (2.000) que ninguna etapa marcaba → D-EF1.
+
+## 03b – Identidades del EFE (2026-11-05)
+
+**D-EF1.** El 03b revisaba cada flujo contra sus líneas, no la identidad entre flujos. Se agregan `aumento_neto` (operación + financiamiento) y `evolucion_efectivo` (saldo inicial + aumento neto + diferencias de cambio = saldo final), buscadas después del primer flujo ubicado; si el valor no calza con el XML, por glosa única. Mismo esquema de `estructura_efe.csv` y misma clasificación. Ubicadas: 99,7% y 99,9%.
+
+Efecto en el 04c: errores 332 → **368 casos en 298 fondo-año** (error_PDF 189 → 226). Muchos son ecos de un flujo que no suma (misma celda y diferencia → mismo caso). Precisión del check sin medir: muestra `--efe` (plantilla de una AGF con varios fondos marcados el mismo año, diferencias grandes y resto).
