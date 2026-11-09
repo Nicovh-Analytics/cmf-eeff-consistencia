@@ -641,3 +641,17 @@ La ficha pasa a ser el archivo de revisión de un fondo-año: rearma cada estado
 **D-EF1.** El 03b revisaba cada flujo contra sus líneas, no la identidad entre flujos. Se agregan `aumento_neto` (operación + financiamiento) y `evolucion_efectivo` (saldo inicial + aumento neto + diferencias de cambio = saldo final), buscadas después del primer flujo ubicado; si el valor no calza con el XML, por glosa única. Mismo esquema de `estructura_efe.csv` y misma clasificación. Ubicadas: 99,7% y 99,9%.
 
 Efecto en el 04c: errores 332 → **368 casos en 298 fondo-año** (error_PDF 189 → 226). Muchos son ecos de un flujo que no suma (misma celda y diferencia → mismo caso). Precisión del check sin medir: muestra `--efe` (plantilla de una AGF con varios fondos marcados el mismo año, diferencias grandes y resto).
+
+### D-EF2. Identidades del EFE: correcciones y precisión (2026-11-08)
+
+Ajustes a la ubicación de las líneas (`identidades_efe` del 03b), cada uno por un falso positivo de la revisión o de la corrida:
+- **Glosa partida**: "Aumento (disminución) neto de efectivo y" sin montos / "efectivo equivalente (315.080)". Se busca la glosa en dos líneas seguidas con el valor en la segunda; por glosa sola no se acepta una línea en 0 si el XML trae monto (un fondo).
+- **Parte en cero en el XML**: vale 0 si no se ubica (saldo inicial de un fondo nuevo). Si el XML no trae la cuenta, solo la diferencia de cambio puede faltar: sin aumento neto la identidad no se evalúa.
+- **Diferencia de cambio**: se busca aunque el XML diga 0 (hay PDF que la imprimen), pero por glosa nunca en una línea de aumento neto o de saldo ("aumento neto … antes del efecto de las diferencias de cambio" duplicaba el aumento).
+- **Una línea, una parte**: el aumento neto se ubica primero (se confirma con su valor) y ninguna línea sirve para dos partes. Con montos corridos una línea respecto de su glosa (un fondo) las identidades quedan sin ubicar en vez de dar error.
+
+Efecto en el 04c: 332 → **362 casos de error en 296 fondo-año** (+30 netos; los ecos de un flujo que no suma quedan en el caso del flujo).
+
+**Precisión** (`revision_04c_efe`, 10 casos): 6 errores reales — tipeo del XML (7.000), dos PDF que no suman, y tres fondos de una misma AGF en 2023-2024 cuyo EFE no presenta el aumento neto o pone en esa línea el saldo final del año anterior (el saldo final cuadra) —; 1 otro (reexpresión del comparativo en el reporte siguiente); 3 de lectura: uno corregido arriba y dos glosas que el 03b no reconoce (saldo final y diferencia de cambio con otra redacción), que quedan para el lector unificado.
+
+**Pendiente (lector unificado)**: sinónimos de glosas en una sola tabla para todas las etapas; montos corridos una línea cuando la glosa de un total ocupa dos líneas (también en la ERI de la ficha).

@@ -31,13 +31,15 @@ ESF, ERI y EFE en forma de estado (si hay lectura espacial del PDF, como en el 0
     lineas entre el subtotal anterior y el suyo (orden de la pagina, como el 03b);
     partes del XML: los codigos del subtotal;
   - hoja Casos: casos del 04c del fondo-anio; las cuentas de un caso van marcadas.
-Hoja t+1: cada cifra de t (columna actual) frente a la misma cifra en el reporte de t+1 (columna
-  anterior), en PDF y en XML, para ESF, ERI, EFE y ECP por serie; y la continuidad cierre t =
+Hojas t+1 y t-1: cada cifra de t (columna actual) frente a la misma cifra en el reporte de t+1
+  (columna anterior); y cada cifra de t-1 que presenta t (columna anterior) frente al reporte de
+  t-1 (columna actual). En PDF y en XML, para ESF, ERI, EFE y ECP por serie; y la continuidad cierre t =
   inicio t+1 (ECP por serie y efectivo del EFE). Las hojas "forma" evaluan dentro del mismo t.
   Veredicto por cifra entre las 4 versiones (PDF t, XML t, PDF t+1, XML t+1): 4 iguales -> ok;
   3 contra 1 -> error en la que discrepa; 2 contra 2 -> error en el grupo cuyo documento no cuadra
-  internamente (subtotales e identidades en que participa la cifra), si el otro si; si no, sin
-  determinar (para la revision de notas).
+  internamente (subtotales e identidades en que participa la cifra), si el otro si; los dos de t
+  contra los dos de t+1 -> cambia en t+1 (reexpresion o reclasificacion); si no, sin determinar
+  (para la revision de notas).
 ECP en forma de estado (si el 03d lo leyo): por columna, filas del ECP x series con PDF | XML |
   Dif. El PDF sale de ecp_chequeos (columnas serie_1, serie_2... del 03d), asociadas a la serie
   del XML por la mayor cantidad de valores iguales. Verificacion con formulas por serie:
@@ -132,7 +134,8 @@ class Datos:
         self.pags = {k: sorted({int(p) for p in g["pagina"]}) for k, g in e.groupby(["rut", "anio", "estado"])}
         ch = pd.read_csv(DIR_PROC / "ecp_chequeos.csv", dtype={"rut": str})
         k = pd.DataFrame(claves, columns=["rut", "anio"])
-        self.ecp = ch.merge(pd.concat([k, k.assign(anio=k["anio"] + 1)]).drop_duplicates(), on=["rut", "anio"])
+        self.ecp = ch.merge(pd.concat([k, k.assign(anio=k["anio"] + 1), k.assign(anio=k["anio"] - 1)])
+                            .drop_duplicates(), on=["rut", "anio"])
         ruta = DIR_PROC / "casos_unicos.csv"
         self.casos = pd.read_csv(ruta, dtype={"rut": str}) if ruta.exists() else pd.DataFrame()
 
@@ -340,6 +343,13 @@ IDENTIDADES = {
 }
 
 
+# Partes de una identidad que pueden no venir (en cero, sin linea ni cuenta): sin ellas la
+# identidad igual se evalua. Las demas son obligatorias: si falta alguna en el documento la
+# identidad no se evalua (una plantilla sin "aumento neto" no es un saldo final que no cuadra).
+OPCIONALES = {"DiferenciasDeCambioNetasSobreEfectivoYEfectivoEquivalente",
+              "ImpuestosALasGananciasPorInversionesEnElExterior"}
+
+
 def _tokens(texto):
     t = unicodedata.normalize("NFKD", str(texto)).encode("ascii", "ignore").decode().lower()
     return [w for w in re.findall(r"[a-z]+", t) if w not in STOP]
@@ -411,10 +421,11 @@ def emparejar(lineas, xml):
 def hoja_forma(ws, est, cta_estado, lineas, casos_cod):
     """Hoja de un estado en forma de estado. Devuelve un resumen para la consola."""
     cta_estado = cta_estado[cta_estado["serie"].isna()]
+    hay_ctx = set(cta_estado["contexto"])            # una cuenta sin valor en una columna que el XML si trae = 0
     xml = {}
     for c in cta_estado["codigo"].drop_duplicates():
         m = cta_estado[cta_estado["codigo"] == c].set_index("contexto")["valor"]
-        xml[c] = (m.get("PeriodoActual"), m.get("PeriodoAnterior"))
+        xml[c] = tuple(m.get(ctx, 0 if ctx in hay_ctx else None) for ctx in ("PeriodoActual", "PeriodoAnterior"))
     par = emparejar(lineas, xml)
     de_cod = {c: i for i, (c, _) in par.items()}
     # ventana del estado en el PDF: de la primera a la ultima linea emparejada (en una pagina
@@ -478,6 +489,16 @@ def hoja_forma(ws, est, cta_estado, lineas, casos_cod):
                     f.fill = FILL_DIF
                 if p and x and (p > 0) != (x > 0) and "signo" not in coin:
                     coin += ", signo distinto"
+        # La cifra del PDF difiere de su cuenta del XML pero es la de OTRA cuenta del XML: la misma
+        # cifra esta clasificada distinto (p.ej. costo amortizado vs valor razonable) o dos filas
+        # intercambiaron montos. Se dice cual.
+        for k, (p, x) in ((0, (ln[3] if ln else None, xa)), (1, (ln[4] if ln else None, xb))):
+            if not p or (x is not None and not pd.isna(x) and abs(abs(p) - abs(x)) <= TOL):
+                continue
+            otra = next((c2 for c2, v2 in xml.items() if c2 != c and v2[k] is not None and not pd.isna(v2[k])
+                         and v2[k] and abs(abs(v2[k]) - abs(p)) <= TOL), None)
+            if otra:
+                coin += f"; {'act' if k == 0 else 'ant'}: PDF = XML de {legible(otra)}"
         ws.cell(row=fila, column=9, value=coin).font = FUENTE
         ws.cell(row=fila, column=10, value=ln[0] if ln else None).font = FUENTE
         if c:
@@ -532,6 +553,8 @@ def hoja_forma(ws, est, cta_estado, lineas, casos_cod):
                             if i in fila_lin and (i not in par or par[i][0] not in subt_cods))
                 resumen.append(f"{n} PDF dif {lineas[i_tot][3] - s_pdf:,.0f}")
     for nombre, res, partes in IDENTIDADES.get(est, []):
+        if any(c not in fila_cod for _, c in partes if c not in OPCIONALES):
+            continue                                    # falta una parte obligatoria: no se evalua
         filas_p = [(s, fila_cod[c]) for s, c in partes if c in fila_cod]
         if res in fila_cod and filas_p:
             sig = {r: s for s, r in filas_p}
@@ -542,7 +565,7 @@ def hoja_forma(ws, est, cta_estado, lineas, casos_cod):
     ws.column_dimensions["B"].width = 55
     for j in range(3, 9):
         ws.column_dimensions[ws.cell(row=1, column=j).column_letter].width = 15
-    ws.column_dimensions["I"].width = 14
+    ws.column_dimensions["I"].width = 40
     ws.freeze_panes = "C2"
     n = pd.Series([f[0] for f in filas]).value_counts().to_dict() if filas else {}
     return f"{est}: glosa {n.get('glosa', 0)}, valor {n.get('valor', 0)}, sin coincidencia {n.get('solo', 0)}" + \
@@ -793,6 +816,8 @@ def cuadra_estado(vals, est):
             ok = abs(sum(vals[c] for c in partes) - vals[cfg["codigo"]]) <= TOL
             marca([cfg["codigo"], *partes], ok)
     for _, r, partes in IDENTIDADES.get(est, []):
+        if any(vals.get(c) is None for _, c in partes if c not in OPCIONALES):
+            continue
         ps = [(sg, c) for sg, c in partes if vals.get(c) is not None]
         if vals.get(r) is not None and ps:
             calc = sum(vals[c] if sg == "+" else -abs(vals[c]) for sg, c in ps)
@@ -814,7 +839,7 @@ def cuadra_ecp(d):
     return res
 
 
-def veredicto(vals, cuadra):
+def veredicto(vals, cuadra, docs=DOCS):
     """vals, cuadra: 4 valores / 4 True|False|None en el orden de DOCS. Regla:
     4 iguales -> ok; 3 contra 1 -> error en el que discrepa; 2 contra 2 (o 2 versiones distintas)
     -> error en el grupo cuyo documento no cuadra internamente, si el otro si cuadra; si no,
@@ -829,7 +854,11 @@ def veredicto(vals, cuadra):
     if len(grupos) == 1:
         return "ok" if len(hay) == 4 else f"ok ({len(hay)} de 4)"
     grupos.sort(key=len, reverse=True)
-    nombre = lambda g: " + ".join(DOCS[i] for i in g)
+    nombre = lambda g: " + ".join(docs[i] for i in g)
+    if sorted(map(sorted, grupos)) == [[0, 1], [2, 3]]:
+        # PDF y XML del primer reporte coinciden entre si, y los dos del siguiente tambien, pero con
+        # otra cifra: el reporte siguiente cambio el comparativo (reexpresion o reclasificacion)
+        return f"cambia en {docs[2].split()[-1]} (reexpresion o reclasificacion)"
     if len(grupos[0]) > len(grupos[1]) and len(grupos[0]) >= 2:
         return "error en " + ", ".join(nombre(g) for g in grupos[1:])
     ok_g = [all(cuadra[i] is True for i in g) for g in grupos]
@@ -841,12 +870,13 @@ def veredicto(vals, cuadra):
 
 def hoja_t1(ws, t, t1, anio):
     """t, t1: dict(cta, lineas={estado: lineas}, ch) del reporte de t y de t+1 (o None)."""
-    if t1 is None:
-        ws["A1"] = f"(no hay reporte {anio + 1} del fondo: sin comparativo t+1)"
-        return "t+1: sin reporte", None
+    if t is None or t1 is None:
+        ws["A1"] = f"(falta el reporte {anio if t is None else anio + 1} del fondo: sin comparativo {anio} vs {anio + 1})"
+        return f"{anio}/{anio + 1}: sin reporte", None
+    nombres_doc = (f"PDF {anio}", f"XML {anio}", f"PDF {anio + 1}", f"XML {anio + 1}")
     encab = ["Cuenta", f"PDF {anio} (actual)", f"PDF {anio + 1} (anterior)", "Dif",
              f"XML {anio} (actual)", f"XML {anio + 1} (anterior)", "Dif", "Veredicto",
-             "Cuadra interna (PDF t | XML t | PDF t+1 | XML t+1)"]
+             f"Cuadra interna ({' | '.join(nombres_doc)})"]
     fila, cambios, conteo, errores, seccion = 0, {}, {}, [], [""]
     signo = {True: "si", False: "NO", None: "-"}
 
@@ -866,7 +896,7 @@ def hoja_t1(ws, t, t1, anio):
                     f.fill = FILL_DIF
                     hay = True
         if cuadra is not None:
-            v = veredicto((p0, x0, p1, x1), cuadra)
+            v = veredicto((p0, x0, p1, x1), cuadra, nombres_doc)
             c = ws.cell(row=fila, column=8, value=v)
             c.font = FUENTE
             if v.startswith(("error", "sin")):
@@ -900,10 +930,15 @@ def hoja_t1(ws, t, t1, anio):
         cq = [cuadra_estado({k: v for k, v in d.items() if v is not None and not pd.isna(v)}, est) for d in docs]
         titulo(est)
         n = 0
+        # Un documento que SI trae el estado pero no la cuenta la tiene en 0 (la cifra se movio a
+        # otra linea o se omitio): sin esto la celda queda en blanco y la Dif no se calcula.
+        tiene = (bool(p0), not x0.empty, bool(p1), not x1.empty)
         for cod in cods:
             v = (p0.get(cod, (None,))[0], p1.get(cod, (None, None))[1], x0.get(cod), x1.get(cod))
             if all(x is None or pd.isna(x) for x in v):
                 continue
+            v = tuple(0 if (x is None or pd.isna(x)) and t else x
+                      for x, t in zip(v, (tiene[0], tiene[2], tiene[1], tiene[3])))
             n += escribir_fila(legible(cod), *v, cuadra=tuple(q.get(cod) for q in cq))
         cambios[est] = n
 
@@ -946,7 +981,7 @@ def hoja_t1(ws, t, t1, anio):
         p1 = valores_pdf(t1["lineas"].get(est, []), c1e) if t1["lineas"].get(est) else {}
         x0 = c0e[c0e["contexto"] == "PeriodoActual"].set_index("codigo")["valor"]
         x1 = c1e[c1e["contexto"] == "PeriodoActual"].set_index("codigo")["valor"]
-        escribir_fila("EFE efectivo: saldo final t = saldo inicial t+1", p0.get(cierre, (None,))[0],
+        escribir_fila(f"EFE efectivo: saldo final {anio} = saldo inicial {anio + 1}", p0.get(cierre, (None,))[0],
                       p1.get(inicio, (None,))[0], x0.get(cierre), x1.get(inicio))
 
     ws.column_dimensions["A"].width = 60
@@ -954,7 +989,7 @@ def hoja_t1(ws, t, t1, anio):
         ws.column_dimensions[ws.cell(row=1, column=j).column_letter].width = 17
     ws.column_dimensions["H"].width = 40
     ws.column_dimensions["I"].width = 22
-    return ("t+1: filas que cambian " + ", ".join(f"{k} {v}" for k, v in cambios.items())
+    return (f"{anio} vs {anio + 1}: filas que cambian " + ", ".join(f"{k} {v}" for k, v in cambios.items())
             + " | veredictos " + ", ".join(f"{k} {v}" for k, v in sorted(conteo.items()))), errores
 
 
@@ -974,7 +1009,7 @@ def resumen_fondo(info, errores, casos, anio):
     """Arriba de la hoja Fondo: estados con error segun el veredicto t+1 y casos del 04c."""
     filas = [("RESUMEN", "")]
     if errores is None:
-        filas.append(("EEFF con error", f"sin reporte {anio + 1}: no hay veredicto t+1"))
+        filas.append(("EEFF con error", f"sin reportes {anio - 1} ni {anio + 1}: no hay veredicto"))
     else:
         por_est = {}
         for est, nombre, v in errores:
@@ -1116,7 +1151,7 @@ def generar(datos: Datos, rut: str, anio: int):
                if co else {})
         ch = datos.ecp[(datos.ecp["rut"] == rut) & (datos.ecp["anio"] == a)]
         return dict(cta=c, lineas=lin, ch=ch, coords=co)
-    rep_t, rep_t1 = reporte(anio), reporte(anio + 1)
+    rep_t, rep_t1, rep_tm1 = reporte(anio), reporte(anio + 1), reporte(anio - 1)
 
     wb = Workbook()
     info = wb.active
@@ -1185,11 +1220,15 @@ def generar(datos: Datos, rut: str, anio: int):
             (hoja_ecp if est == "ECP" else hoja_estado)(ws, parte, comp)
     if len(casos):
         hoja_casos(wb, casos)
-    txt, errores = hoja_t1(wb.create_sheet(f"t+1 ({anio + 1})"), rep_t, rep_t1, anio)
-    resumen.append(txt)
+    # Dos comparativos: el periodo t frente al reporte t+1 (su columna anterior) y el periodo t-1
+    # que presenta t (columna anterior) frente al reporte t-1 (su columna actual)
+    txt, err_t1 = hoja_t1(wb.create_sheet(f"t+1 ({anio + 1})"), rep_t, rep_t1, anio)
+    txt_m, err_tm1 = hoja_t1(wb.create_sheet(f"t-1 ({anio - 1})"), rep_tm1, rep_t, anio - 1)
+    resumen += [txt_m, txt]
+    errores = None if err_t1 is None and err_tm1 is None else (err_tm1 or []) + (err_t1 or [])
     resumen_fondo(info, errores, casos, anio)
-    # orden: resumen, casos, t+1, los estados leidos del PDF y al final las vistas del cruce
-    orden = ["Fondo", "Casos", f"t+1 ({anio + 1})", "ESF forma", "ERI forma", "ECP forma", "EFE forma"]
+    # orden: resumen, casos, comparativos, los estados leidos del PDF y al final las vistas del cruce
+    orden = ["Fondo", "Casos", f"t-1 ({anio - 1})", f"t+1 ({anio + 1})", "ESF forma", "ERI forma", "ECP forma", "EFE forma"]
     hojas = {w.title: w for w in wb.worksheets}
     wb._sheets = [hojas[n] for n in orden if n in hojas] + [w for w in wb.worksheets if w.title not in orden]
 

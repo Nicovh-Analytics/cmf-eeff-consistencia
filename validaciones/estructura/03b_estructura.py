@@ -351,26 +351,56 @@ def identidades_efe(planas, lineas, xml, ubic, usados, espaciadas, ocr, irregula
     desde = min(ubic[k] for k in ("operacion", "financiamiento") if k in ubic)
     filas = []
 
+    # v7: una linea del PDF no puede ser dos partes (con montos corridos una linea, la diferencia
+    # de cambio tomaba la misma linea que el aumento neto)
+    ocupadas = lambda: {v[0] for v in pos.values()}
+
     def ubicar(glosa_re, codigo):
         x_act, x_ant = xml.get(("PeriodoActual", codigo)), xml.get(("PeriodoAnterior", codigo))
         if x_act is None:
             return None
+        # v6: la diferencia de cambio se busca aunque el XML diga 0 (hay PDF que la imprimen: la v5
+        # la fijaba en 0 y la identidad del PDF dejaba de cuadrar), pero por glosa nunca en una linea
+        # de aumento neto o de saldo ("aumento neto ... antes del efecto de las diferencias de cambio")
+        ajenas = ([IDENTIDADES_EFE["aumento_neto"]["glosa"], re.compile(r"saldo(inicial|final)", re.I)]
+                  if codigo == LINEAS_EFE["dif_cambio"][0] else [])
+        propia = lambda l: not any(r.search(norm(l)) for r in ajenas)
         resto = planas[desde:]
         i = ubicar_subtotal(resto, glosa_re, x_act, x_ant)
+        if i is not None and i + desde in ocupadas():
+            i = None
         metodo = "glosa_y_valor"
         if i is None:
-            cand = [k for k, (_, a, _, l) in enumerate(resto)
-                    if a is not None and k + desde not in usados and glosa_re.search(norm(l))]
+            # v4: glosa partida en dos lineas ("Aumento (disminucion) neto de efectivo y" sin montos /
+            # "efectivo equivalente  (315.080)"): la linea con la glosa sale en 0 y la del monto no
+            # dice "aumento". Se busca la glosa en dos lineas seguidas y el valor en la segunda.
+            for k in range(len(resto) - 1):
+                a2, b2, l2 = resto[k + 1][1], resto[k + 1][2], resto[k][3] + " " + resto[k + 1][3]
+                if k + 1 + desde in usados | ocupadas() or not glosa_re.search(norm(l2)) or not propia(l2):
+                    continue
+                if ((a2 is not None and abs(abs(a2) - abs(x_act)) <= TOL)
+                        or (x_ant is not None and b2 is not None and abs(abs(b2) - abs(x_ant)) <= TOL)):
+                    i, metodo = k + 1, "glosa_partida"
+                    break
+        if i is None:
+            # solo por glosa: no una linea en 0 si el XML trae monto (era la mitad de una glosa partida)
+            cand = [k for k, (_, a, b, l) in enumerate(resto)
+                    if a is not None and (a or b or not x_act) and k + desde not in usados | ocupadas()
+                    and glosa_re.search(norm(l)) and propia(l)]
             i, metodo = (cand[0], "solo_glosa") if len(cand) == 1 else (None, None)
         return (i + desde, metodo) if i is not None else None
 
     pos = {k: (v, "subtotal") for k, v in ubic.items()}
+    # v7: el aumento neto se ubica primero (se confirma con su valor); las lineas sueltas despues
+    u = ubicar(IDENTIDADES_EFE["aumento_neto"]["glosa"], IDENTIDADES_EFE["aumento_neto"]["codigo"])
+    if u:
+        pos["aumento_neto"] = u
     for nombre, (codigo, glosa_re) in LINEAS_EFE.items():
         u = ubicar(glosa_re, codigo)
         if u:
             pos[nombre] = u
     for nombre, cfg in IDENTIDADES_EFE.items():
-        u = ubicar(cfg["glosa"], cfg["codigo"])
+        u = pos.get(nombre) or ubicar(cfg["glosa"], cfg["codigo"])
         if not u:
             filas.append(dict(subtotal=nombre, ubicado=False))
             continue
@@ -385,11 +415,16 @@ def identidades_efe(planas, lineas, xml, ubic, usados, espaciadas, ocr, irregula
                 continue
             vals, det, falta = [], [], False
             for p in cfg["partes"]:
-                x_p = xml.get((ctx, codigo_de[p])) or 0
+                x_crudo = xml.get((ctx, codigo_de[p]))
+                x_p = x_crudo or 0
                 if p in pos and planas[pos[p][0]][idx] is not None:
                     v = planas[pos[p][0]][idx]
-                elif not x_p:
-                    v = 0                       # parte en cero en el XML y sin linea: no se imprime
+                elif not x_p and (p == "dif_cambio" or x_crudo is not None):
+                    # v5: en cero en el XML (p.ej. saldo inicial de un fondo nuevo) -> 0; si el XML no
+                    # trae la cuenta, solo la diferencia de cambio puede faltar
+                    v = 0                       # diferencia de cambio en cero y sin linea: no se imprime
+                # v3: las demas partes son obligatorias aunque el XML no las traiga (plantilla sin
+                # "aumento neto": no se evalua el saldo final en vez de sumarla como 0)
                 else:
                     falta = True                # parte con valor que no se ubico: no se puede sumar
                     continue

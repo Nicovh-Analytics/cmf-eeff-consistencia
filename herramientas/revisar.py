@@ -6,7 +6,9 @@ Uso (desde la raiz del repo):
     PYTHONPATH=. python herramientas/revisar.py verificacion/muestra_03b_esf_eri.xlsx --todos
 
 Por cada fila sin veredicto:
-  1. abre el PDF del caso en la pagina del subtotal (Edge, que respeta #page=N);
+  1. si existe la ficha del fondo-anio (verificacion/fichas/{rut}_{anio}.xlsx, del 06_ficha) abre la
+     ficha; el PDF se abre con p y el XML con v. Sin ficha, abre el PDF del caso en la pagina del
+     subtotal (Edge, que respeta #page=N);
      en planillas del 03c (columna "identidad"), una pestana por cada pagina involucrada;
   2. muestra lo que leyo el 03b (subtotal impreso, suma de lineas, XML y detalle) o,
      en el 03c, cada termino de la identidad en PDF y XML lado a lado;
@@ -22,7 +24,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from config import CMF_HOME
+from config import CMF_HOME, RAIZ
+
+DIR_FICHAS = RAIZ / "verificacion" / "fichas"
 
 VEREDICTOS = {"e": "error_pdf", "x": "error_xml", "l": "lectura", "o": "otro",
               "1": "error_pdf", "2": "error_xml", "3": "lectura", "4": "otro"}
@@ -192,7 +196,9 @@ def main():
     casos = list(df.index) if todos else list(df.index[df["veredicto"].str.strip() == ""])
     print(f"{len(casos)} casos {'(todos)' if todos else 'pendientes'} de {len(df)}.\n  Teclas: "
           + ", ".join(f"{k}={v}" for k, v in VEREDICTOS.items())
-          + "\n  v=ver XML en VS Code (t y t+1 en planillas de comparativos), a=PDF anio anterior, f=PDF anio siguiente, b=volver al caso anterior,"
+          + "\n  p=PDF del caso en su pagina, v=ver XML en VS Code (t y t+1 en planillas de comparativos),"
+            " a / f = PDF anio anterior / siguiente, va / vf = XML anio anterior / siguiente,"
+            " b=volver al caso anterior,"
             " s=saltar, q=guardar y salir")
 
     pos = 0
@@ -223,20 +229,34 @@ def main():
 
         pdf = ruta_pdf(r["rut"], anio)
         anio_t = int(r["anio_t"]) if modo_comp and "anio_t" in r and pd.notna(r["anio_t"]) else anio
-        if modo_comp:
-            # los dos PDF involucrados: t en la pagina de la linea, t+1 en la del comparativo
-            pag_t = r["pagina_t"] if "pagina_t" in r else str(r.get("paginas", "")).split(",")[0]
-            for a_, p_ in ((anio_t, pag_t), (anio_t + 1, r.get("pagina_t1"))):
-                ruta = ruta_pdf(r["rut"], a_)
-                p_ = int(float(p_)) if pd.notna(p_) and str(p_).strip() not in ("", "<NA>", "nan") else None
-                abrir_pdf(ruta, p_) if ruta else print(f"  (sin PDF de {a_})")
-        elif not pdf:
-            print("  (sin PDF en cruce_resumen)")
-        elif modo_03c:
-            for p in str(r.get("paginas", r.get("pagina", ""))).split(","):     # ESF y EFE pueden estar en paginas distintas
-                abrir_pdf(pdf, int(p) if p.strip().isdigit() else None)
+
+        def abrir_pdfs_caso():
+            if modo_comp:
+                # los dos PDF involucrados: t en la pagina de la linea, t+1 en la del comparativo
+                pag_t = r["pagina_t"] if "pagina_t" in r else str(r.get("paginas", "")).split(",")[0]
+                for a_, p_ in ((anio_t, pag_t), (anio_t + 1, r.get("pagina_t1"))):
+                    ruta = ruta_pdf(r["rut"], a_)
+                    p_ = int(float(p_)) if pd.notna(p_) and str(p_).strip() not in ("", "<NA>", "nan") else None
+                    abrir_pdf(ruta, p_) if ruta else print(f"  (sin PDF de {a_})")
+            elif not pdf:
+                print("  (sin PDF en cruce_resumen)")
+            elif modo_03c:
+                for p in str(r.get("paginas", r.get("pagina", ""))).split(","):     # ESF y EFE pueden estar en paginas distintas
+                    abrir_pdf(pdf, int(p) if p.strip().isdigit() else None)
+            else:
+                abrir_pdf(pdf, r.get("pagina"))
+
+        # Primero la ficha (06_ficha): PDF y XML lado a lado, sumas y veredicto t+1. Sin ficha, el PDF.
+        ficha = DIR_FICHAS / f"{r['rut']}_{anio}.xlsx"
+        if ficha.exists():
+            print(f"  ficha: {ficha.name}   (p = PDF, v = XML)")
+            try:
+                os.startfile(ficha)
+            except (AttributeError, OSError):
+                subprocess.Popen(["cmd", "/c", "start", "", str(ficha)])
         else:
-            abrir_pdf(pdf, r.get("pagina"))
+            print("  (sin ficha: PYTHONPATH=. python consolidacion/06_ficha.py --planilla <esta planilla>)")
+            abrir_pdfs_caso()
 
         while True:
             k = input("  veredicto> ").strip().lower()
@@ -253,12 +273,20 @@ def main():
                     continue
                 pos -= 1
                 break
+            if k == "p":
+                abrir_pdfs_caso()
+                continue
             if k == "v":
                 rxs = [ruta_xml(r["rut"], a_) for a_ in ((anio_t, anio_t + 1) if modo_comp else (anio,))]
                 for rx in rxs:
                     abrir_xml(rx) if rx else print("  (sin XML en encabezados)")
                 if any(rxs):
                     print("  (en el XML: Ctrl+F con el codigo; PeriodoActual/PeriodoAnterior indican la columna)")
+                continue
+            if k in ("va", "vf"):                                 # XML del anio anterior / siguiente
+                otro = anio - 1 if k == "va" else anio + 1
+                rx = ruta_xml(r["rut"], otro)
+                abrir_xml(rx) if rx else print(f"  (sin XML de {otro})")
                 continue
             if k in ("a", "f"):
                 otro = anio - 1 if k == "a" else anio + 1
