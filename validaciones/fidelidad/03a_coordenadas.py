@@ -8,12 +8,16 @@ Este script guarda las PALABRAS con su posicion en la pagina, para que el
 lector espacial del 03b asigne columnas por geometria y sin usar el XML.
 
 Por cada fondo-anio con paginas de estados detectadas por el 03:
-  - abre el PDF, toma solo esas paginas
+  - abre el PDF, toma esas paginas mas los huecos entre ellas y una antes y una
+    despues (comun.lector.paginas_lector: el 03 ubica por cifras del XML y pierde
+    paginas que calzan poco; el lector decide por titulo cuales usar)
   - dedupe_chars(): elimina la negrita simulada por sobreimpresion
   - extract_words(): palabras con x0, x1 (bordes), top, bottom
   - guarda data/coords_pdf/{rut}/{anio}/{pdf}.json.gz
 
-Se salta lo ya extraido (salvo que el PDF sea mas nuevo que el cache).
+Se salta lo ya extraido (salvo que el PDF sea mas nuevo que el cache). Si el cache
+existe pero le faltan paginas, extrae solo esas y las agrega ("intentadas" guarda
+las ya pedidas, para no repetir las que no existen en el PDF).
 Paralelo como la etapa 1 del 03.
 
 Lee:      data/procesado/cruce_resumen.csv, data/archivos/{rut}/{anio}/FMNO*.pdf
@@ -28,6 +32,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from config import CMF_HOME
+from comun.lector import paginas_lector
 
 import pandas as pd
 
@@ -43,14 +48,25 @@ def ruta_cache(rut, anio, pdf):
     return DIR_COORDS / str(rut) / str(anio) / (Path(pdf).stem + ".json.gz")
 
 
+def leer_cache(ruta):
+    """Cache existente sin error, o None (con error o ilegible se extrae de nuevo)."""
+    try:
+        with gzip.open(ruta, "rt", encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return None if d.get("error") else d
+
+
 def extraer(args):
     """Corre en un proceso aparte (funcion de nivel superior por Windows)."""
     import pdfplumber
 
-    rut, anio, pdf, paginas = args
+    rut, anio, pdf, paginas, previo = args
     ruta_pdf = DIR_ARCHIVOS / str(rut) / str(anio) / pdf
     destino = ruta_cache(rut, anio, pdf)
-    salida = {"pdf": pdf, "version": VERSION, "error": None, "paginas": {}}
+    salida = previo or {"pdf": pdf, "version": VERSION, "error": None, "paginas": {}}
+    salida["intentadas"] = sorted(set(salida.get("intentadas") or map(int, salida["paginas"])) | set(paginas))
     try:
         with pdfplumber.open(ruta_pdf) as doc:
             for p in paginas:
@@ -65,7 +81,8 @@ def extraer(args):
                                   round(w["top"], 1), round(w["bottom"], 1)] for w in palabras],
                 }
     except Exception as e:  # noqa: BLE001 - se registra y se sigue
-        salida["error"] = f"{type(e).__name__}: {e}"[:300]
+        # al agregar paginas a un cache bueno, un error no borra lo que ya estaba
+        salida["error_agregar" if previo else "error"] = f"{type(e).__name__}: {e}"[:300]
 
     destino.parent.mkdir(parents=True, exist_ok=True)
     temporal = destino.with_suffix(".part")
@@ -78,19 +95,27 @@ def extraer(args):
 def main():
     res = pd.read_csv(DIR_PROC / "cruce_resumen.csv", dtype={"rut": str})
     res = res[res["paginas_estados"].notna() & res["pdf"].notna()]
-    tareas = []
+    tareas, agregar = [], 0
     for r in res.itertuples(index=False):
         paginas = [int(p) for p in str(r.paginas_estados).split(",") if p.strip().isdigit()]
         ruta_pdf = DIR_ARCHIVOS / str(r.rut) / str(r.anio) / r.pdf
         destino = ruta_cache(r.rut, r.anio, r.pdf)
         if not paginas or not ruta_pdf.exists():
             continue
+        paginas = paginas_lector(paginas)
+        previo = None
         if destino.exists() and destino.stat().st_mtime >= ruta_pdf.stat().st_mtime:
-            continue                        # ya extraido y el PDF no cambio
-        tareas.append((r.rut, r.anio, r.pdf, paginas))
+            previo = leer_cache(destino)    # ya extraido y el PDF no cambio: solo lo que falta
+            if previo is not None:
+                hechas = set(previo.get("intentadas") or map(int, previo["paginas"]))
+                paginas = [p for p in paginas if p not in hechas]
+                if not paginas:
+                    continue
+                agregar += 1
+        tareas.append((r.rut, r.anio, r.pdf, paginas, previo))
 
     print(f"fondo-anio con paginas de estados: {len(res)} | por extraer: {len(tareas)} "
-          f"| procesos: {N_PROCESOS}")
+          f"(de ellos, agregar paginas a un cache existente: {agregar}) | procesos: {N_PROCESOS}")
     if not tareas:
         return 0
     inicio, hechos, errores = time.time(), 0, 0

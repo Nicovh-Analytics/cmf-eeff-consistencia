@@ -5,6 +5,9 @@
 Complemento del 03a para lo que pdfplumber no puede leer:
   - paginas_sin_tabla (fondos con estado "ok" del 03): paginas con el titulo de un
     estado y casi sin texto -> el estado es una imagen.
+  - paginas con texto ilegible: el PDF trae palabras pero cada una es "(cid:12)(cid:3)..."
+    (fuente sin tabla de caracteres; una plantilla de 2018). Se buscan en el cache del 03a
+    (paginas de comun.lector.paginas_lector) y se hace OCR de las que tienen mayoria "(cid:".
   - con --sin-texto: PDF escaneados completos (estado "sin_texto" del 03). Se hace
     OCR de las primeras MAX_PAG paginas y se guardan las que tienen el titulo de un
     estado y montos.
@@ -16,6 +19,7 @@ cargar_coords une ambos (las paginas con texto tienen prioridad).
 Uso:  python run.py --solo 03o                 (paginas imagen de fondos "ok")
       PYTHONPATH=. python validaciones/fidelidad/03a_ocr.py --sin-texto
 Si Tesseract no esta instalado, avisa y termina sin error (el pipeline sigue).
+Un cache OCR existente se completa: solo se procesan las paginas que faltan ("intentadas").
 """
 import gzip
 import json
@@ -45,6 +49,26 @@ def ruta_ocr(rut, anio, pdf):
     return DIR_COORDS / str(rut) / str(anio) / (Path(pdf).stem + ".ocr.json.gz")
 
 
+def leer_gz(ruta):
+    try:
+        with gzip.open(ruta, "rt", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+MIN_CID = 0.5     # fraccion de palabras "(cid:" para considerar ilegible una pagina
+
+
+def paginas_cid(rut, anio, pdf):
+    """Paginas del cache del 03a cuyo texto es ilegible ("(cid:N)" en vez de letras)."""
+    d = leer_gz(DIR_COORDS / str(rut) / str(anio) / (Path(pdf).stem + ".json.gz"))
+    if not d or d.get("error"):
+        return []
+    return sorted(int(p) for p, v in d["paginas"].items()
+                  if v["palabras"] and sum("(cid:" in w[0] for w in v["palabras"]) >= MIN_CID * len(v["palabras"]))
+
+
 def es_pagina_de_estado(datos):
     texto = " ".join(w[0] for w in datos["palabras"])
     return bool(RE_TITULO.search(texto)) and len(RE_MONTO.findall(texto)) >= 5
@@ -61,13 +85,15 @@ def _init():
 
 def tarea(args):
     from comun.ocr import ocr_pdf
-    rut, anio, pdf, paginas, filtrar = args
-    salida = {"pdf": pdf, "version": VERSION, "error": None, "lang": _LANG, "paginas": {}}
+    rut, anio, pdf, paginas, filtrar, previo = args
+    salida = previo or {"pdf": pdf, "version": VERSION, "error": None, "lang": _LANG, "paginas": {}}
+    salida["intentadas"] = sorted(set(salida.get("intentadas") or map(int, salida["paginas"])) | set(paginas))
     try:
         res = ocr_pdf(DIR_ARCHIVOS / str(rut) / str(anio) / pdf, paginas, lang=_LANG)
-        salida["paginas"] = {p: d for p, d in res.items() if not filtrar or es_pagina_de_estado(d)}
+        salida["paginas"].update({str(p): d for p, d in res.items() if not filtrar or es_pagina_de_estado(d)})
     except Exception as e:                                   # PDF danado, etc.: queda registrado
-        salida["error"] = f"{type(e).__name__}: {e}"
+        # al completar un cache bueno, el error no borra lo que ya estaba
+        salida["error_agregar" if previo else "error"] = f"{type(e).__name__}: {e}"
     destino = ruta_ocr(rut, anio, pdf)
     destino.parent.mkdir(parents=True, exist_ok=True)
     tmp = destino.with_suffix(".part")
@@ -87,24 +113,43 @@ def main():
     # str: una sola pagina ("7") se leeria como numero y se perderia
     res = pd.read_csv(DIR_PROC / "cruce_resumen.csv", dtype={"rut": str, "paginas_sin_tabla": str})
 
-    tareas = []
+    tareas, n_cid = [], 0
     for r in res.itertuples(index=False):
         if not isinstance(r.pdf, str):
             continue
-        if r.estado == "ok" and isinstance(r.paginas_sin_tabla, str) and r.paginas_sin_tabla.strip():
-            paginas, filtrar = [int(p) for p in r.paginas_sin_tabla.split(",") if p.strip().isdigit()], False
-        elif sin_texto and r.estado == "sin_texto":
-            paginas, filtrar = list(range(1, MAX_PAG + 1)), True
-        else:
-            continue
         pdf = DIR_ARCHIVOS / r.rut / str(r.anio) / r.pdf
         cache = ruta_ocr(r.rut, r.anio, r.pdf)
-        if not pdf.exists() or (cache.exists() and cache.stat().st_mtime >= pdf.stat().st_mtime):
+        if not pdf.exists():
             continue
-        tareas.append((r.rut, int(r.anio), r.pdf, paginas, filtrar))
+        if r.estado == "ok":
+            sin_tabla = ([int(p) for p in r.paginas_sin_tabla.split(",") if p.strip().isdigit()]
+                         if isinstance(r.paginas_sin_tabla, str) else [])
+            cid = paginas_cid(r.rut, r.anio, r.pdf)
+            n_cid += bool(cid)
+            paginas, filtrar = sorted(set(sin_tabla) | set(cid)), False
+            if not paginas:
+                continue
+            previo = None
+            if cache.exists() and cache.stat().st_mtime >= pdf.stat().st_mtime:
+                previo = leer_gz(cache)
+                if previo is not None and previo.get("error"):
+                    continue                    # ya fallo con este PDF: no se reintenta cada vez
+                if previo is not None:
+                    hechas = set(previo.get("intentadas") or map(int, previo["paginas"]))
+                    paginas = [p for p in paginas if p not in hechas]
+                    if not paginas:
+                        continue
+        elif sin_texto and r.estado == "sin_texto":
+            if cache.exists() and cache.stat().st_mtime >= pdf.stat().st_mtime:
+                continue
+            paginas, filtrar, previo = list(range(1, MAX_PAG + 1)), True, None
+        else:
+            continue
+        tareas.append((r.rut, int(r.anio), r.pdf, paginas, filtrar, previo))
 
     print(f"OCR ({_LANG}): {len(tareas)} fondo-anio por procesar "
-          f"({sum(len(t[3]) for t in tareas)} paginas), {N_PROCESOS} procesos")
+          f"({sum(len(t[3]) for t in tareas)} paginas; fondo-anio con texto ilegible: {n_cid}), "
+          f"{N_PROCESOS} procesos")
     t0, hechas, con_error, paginas_ok = time.time(), 0, 0, 0
     with ProcessPoolExecutor(N_PROCESOS, initializer=_init) as ex:
         for fut in as_completed([ex.submit(tarea, t) for t in tareas]):

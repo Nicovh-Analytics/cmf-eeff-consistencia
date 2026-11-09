@@ -673,3 +673,14 @@ Una sola lectura del PDF y un solo emparejador para todas las etapas (`comun/lec
 **Cobertura** (4.258 fondo-anio; cuentas del XML con valor != 0 halladas en el PDF / con glosa y valor): ESF 98,2 / 96,1; ERI 98,0 / 96,8; EFE 97,8 / 96,8. Base sin glosario ni corridos: ESF 88,8 en glosa y valor.
 
 **Pendiente**: estados sin renglones (ESF 63, ERI 80, EFE 82): en una muestra de 15, 10 son paginas que no estan en `paginas_estados` del 03 (el 03a solo guarda esas paginas) y 5 paginas con texto sin montos leidos. Propuesta: 03/03a con el rango continuo de paginas. ECP en el paso 1b.
+
+### D-L2. Lector unificado: cobertura de paginas (2026-11-09)
+
+Los estados sin renglones (63 ESF, 80 ERI, 82 EFE fondo-anio) tenian tres causas, revisadas en dos muestras de 15:
+- **Paginas que el 03 no ve.** El 03 ubica paginas por contenido (>= N cifras del XML) y pierde las que calzan poco: fondos con montos chicos y estados con diferencias. `comun.lector.paginas_lector` agrega los huecos y una pagina antes y una despues (tres si el 03 vio menos de 4); el 03a las extrae (completa los cache existentes) y el lector usa una pagina agregada solo si trae el titulo de un estado arriba o >= 2 lineas tipicas de un solo estado. Una pagina que nombra 3+ estados (indice, informe del auditor) no cambia el estado.
+- **Titulos no reconocidos**: en singular ("Estado de Resultado Integral", "Estado de cambio en el Patrimonio Neto"), con los anios en la misma linea, o un EFE sin titulo propio bajo "Notas a los estados financieros".
+- **Texto ilegible**: una plantilla de un anio publica PDF cuyas palabras son "(cid:N)" (fuente sin tabla de caracteres). El 03a_ocr ahora hace OCR tambien de las paginas con mayoria "(cid:": 130 paginas en 14 fondo-anio, con lectura completa en la muestra.
+
+**Resultado** (4.280 de 4.280 fondo-anio leidos; cuentas del XML con valor != 0 halladas / con glosa y valor): ESF 99,1 / 97,0; ERI 98,9 / 97,6; EFE 99,1 / 98,0. Estados sin renglones: 22 / 38 / 28.
+
+El 03b, el 03c y la ficha usan el mismo cache: con el OCR nuevo y las paginas de montos chicos del lector_espacial leen paginas que antes salian vacias. Se mide en la regresion de cada etapa al migrarla.

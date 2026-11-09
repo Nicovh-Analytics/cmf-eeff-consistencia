@@ -33,8 +33,8 @@ ESTADOS = ("ESF", "ERI", "ECP", "EFE")
 # corta sin montos (o con solo fecha/anios): hay titulos precedidos del nombre del fondo.
 TITULOS = {
     "ESF": re.compile(r"estados?(intermedios?)?de(situacion|posicion)financiera|balancegeneral"),
-    "ERI": re.compile(r"estados?(intermedios?)?deresultados"),
-    "ECP": re.compile(r"estados?(intermedios?)?decambios|cambios?en(el|los)?activos?netos?"),
+    "ERI": re.compile(r"estados?(intermedios?)?deresultados?"),          # tambien "Estado de Resultado Integral"
+    "ECP": re.compile(r"estados?(intermedios?)?decambios?|cambios?en(el|los)?activos?netos?"),
     "EFE": re.compile(r"estados?(intermedios?)?de(los)?flujos?deefectivo"),
 }
 MAX_TITULO = 120       # caracteres (norm): una linea mas larga es texto, no titulo
@@ -48,7 +48,7 @@ ANCLAS = {
     "EFE": re.compile(r"flujos?netos?(originado|utilizado|usado|procedente)|actividadesde(la)?operacion$"),
 }
 # Linea de encabezado leida como montos: "Notas 2022 2021", "Al 31 de diciembre de", "Pagina 3".
-RE_ENCABEZADO = re.compile(r"diciembre|ejercicios?terminad|anosterminad|notas?$|^notas?|pagina|^n(o|ro)?$"
+RE_ENCABEZADO = re.compile(r"diciembre|ejercicios?terminad|anosterminad|notas?$|^notas?|pagina|^pag$|^n(o|ro)?$"
                            r"|notasadjuntas")
 # Cola de una glosa partida: "Saldo final de efectivo y efectivo" / "equivalente  196.824"
 # (vacia o solo signos "(+)", "(+ o -)": la linea de los montos de una glosa de arriba)
@@ -90,7 +90,17 @@ def es_encabezado(glosa, act, ant):
     n = norm(glosa)
     if not n:
         return anios                                   # "2019  2018" sin glosa
+    if anios and titulo(glosa):
+        return True                                    # "ESTADOS DE FLUJOS DE EFECTIVO  2023  2022"
     return bool(RE_ENCABEZADO.search(n)) and (anios or chicos)
+
+
+def anclas_fuertes(filas, minimo=2):
+    """Pagina agregada sin titulo pero con >= 2 lineas tipicas de UN estado (un EFE con
+    "Notas a los estados financieros" como encabezado corrido y sin titulo propio)."""
+    cuenta = {e: sum(1 for g, *_ in filas if rx.search(norm(g))) for e, rx in ANCLAS.items()}
+    fuertes = [e for e, n in cuenta.items() if n >= minimo]
+    return len(fuertes) == 1
 
 
 def estado_por_anclas(filas):
@@ -99,12 +109,32 @@ def estado_por_anclas(filas):
     return mejor if cuenta[mejor] and list(cuenta.values()).count(cuenta[mejor]) == 1 else None
 
 
-def leer_estados(coords, paginas):
+MAX_FILAS_TITULO = 10    # en una pagina agregada, el titulo tiene que estar arriba (no en un parrafo)
+
+
+def paginas_lector(paginas_estados, n_paginas=None):
+    """Paginas que lee el lector: las del 03 mas los huecos entre ellas y una antes y una
+    despues. El 03 ubica paginas por CONTENIDO (>= N cifras del XML) y pierde las que calzan
+    poco: fondos con montos chicos o estados con errores, justo los que interesan.
+    Con menos de 4 paginas del 03, 3 antes y 3 despues. El 03a extrae estas mismas
+    paginas (una sola definicion)."""
+    ps = sorted({int(p) for p in paginas_estados})
+    if not ps:
+        return []
+    # Con menos de 4 paginas el 03 vio solo parte de los estados (hay 4): se mira mas lejos.
+    margen = 1 if len(ps) >= 4 else 3
+    return [p for p in range(max(1, ps[0] - margen), ps[-1] + margen + 1) if n_paginas is None or p <= n_paginas]
+
+
+def leer_estados(coords, paginas, base=None):
     """Renglones del ESF, la ERI y el EFE de las paginas de estados (en orden).
     Devuelve (renglones, paginas_estado): paginas_estado = {pagina: [estados con montos]}.
     metodo: "espacial" | "encabezado" (fechas/anios/notas leidos como montos: no se emparejan)
     | "glosa_partida" (las lineas de una glosa partida unidas: montos en la primera, en la
-    ultima o repartidos)."""
+    ultima o repartidos).
+    base: paginas del 03. Las demas (de paginas_lector) se leen solo si traen el titulo de un
+    estado en sus primeras lineas; si no, se saltan sin tocar el estado vigente (notas,
+    informe del auditor, indice)."""
     out, pags = [], {}
     estado, n_por_estado = None, {}
     for p in paginas:
@@ -113,12 +143,18 @@ def leer_estados(coords, paginas):
             continue
         filas, _ = filas_espaciales(pg)
         encab = [(a is None and b is None) or es_encabezado(g, a, b) for g, a, b, _ in filas]
-        if not any(e and titulo(g) for (g, *_), e in zip(filas, encab)):
+        titulos = {titulo(g) for (g, *_), e in zip(filas, encab) if e} - {None}
+        indice = len(titulos) >= 3            # indice o informe del auditor: nombra 3+ estados
+        if base is not None and p not in base and (indice or not (any(
+                e and titulo(g) for (g, *_), e in list(zip(filas, encab))[:MAX_FILAS_TITULO])
+                or anclas_fuertes(filas))):
+            continue
+        if indice or not titulos:
             estado = estado_por_anclas(filas) or estado
         previas = []
         for (glosa, act, ant, _), sin_cifras in zip(filas, encab):
             sin_monto = act is None and ant is None
-            if sin_cifras:
+            if sin_cifras and not indice:
                 t = titulo(glosa)
                 if t:
                     estado, previas = t, []
