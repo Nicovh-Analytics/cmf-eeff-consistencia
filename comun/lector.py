@@ -48,7 +48,7 @@ ANCLAS = {
     "EFE": re.compile(r"flujos?netos?(originado|utilizado|usado|procedente)|actividadesde(la)?operacion$"),
 }
 # Linea de encabezado leida como montos: "Notas 2022 2021", "Al 31 de diciembre de", "Pagina 3".
-RE_ENCABEZADO = re.compile(r"diciembre|ejercicios?terminad|anosterminad|notas?$|^notas?|pagina|^pag$|^n(o|ro)?$"
+RE_ENCABEZADO = re.compile(r"diciembre|ejercicios?terminad|anosterminad|notas?$|^notas?|pagina|^pag$|^n(o|ro)?$|^(m|ms|mm|m\$)+$"
                            r"|notasadjuntas")
 # Cola de una glosa partida: "Saldo final de efectivo y efectivo" / "equivalente  196.824"
 # (vacia o solo signos "(+)", "(+ o -)": la linea de los montos de una glosa de arriba)

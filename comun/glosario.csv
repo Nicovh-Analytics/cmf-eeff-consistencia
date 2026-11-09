@@ -19,3 +19,4 @@ ResultadoEnVentaDeInstrumentosFinancieros,ERI,resultados?en(la)?ventas?de(instru
 AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios,ERI,antesde(la)?distribuci|activos?netos?atribuible.*operacion$,despues,"sin la palabra 'antes' cuando la linea termina en 'de la operacion'"
 AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios,ERI,despuesde(la)?distribuci,,
 CambiosNetosEnValorRazonableDeActivosYPasivosFinancierosAValorRazonableConEfectoEnResultados,ERI,cambiosnetosenvalorrazonable,,
+InteresesDiferenciasDeCambioYReajustesRecibidos,EFE,^(intereses|cupones).*reajustes?recibidos,,"tambien 'Cupones y reajustes recibidos'"

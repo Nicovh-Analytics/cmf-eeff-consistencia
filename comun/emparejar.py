@@ -153,10 +153,15 @@ def _corregir_corridos(rs, cod_glosa, xml):
                 for m in racha:
                     rs[m]["actual_leido"], rs[m]["anterior_leido"] = vals[m]
                     rs[m]["actual"], rs[m]["anterior"] = vals[m + paso]
-                    rs[m]["metodo"] = "monto_sin_glosa" if suelto else "corrido"
+                    # una sola linea cuyo vecino (sin cuenta) trae los montos es la otra mitad de una
+                    # glosa partida ("Remuneraciones Sociedad" / "Administradora 56.566"); corrido
+                    # queda para rachas de 2+ (montos de varias cuentas desplazados)
+                    rs[m]["metodo"] = ("monto_sin_glosa" if suelto else
+                                       "glosa_partida" if len(racha) == 1 else "corrido")
                 rs[borde]["actual_leido"], rs[borde]["anterior_leido"] = vals[borde]
                 rs[borde]["actual"] = rs[borde]["anterior"] = None
-                rs[borde]["metodo"] = "monto_sin_glosa_origen" if suelto else "corrido_origen"
+                rs[borde]["metodo"] = ("monto_sin_glosa_origen" if suelto else
+                                       "glosa_partida_origen" if len(racha) == 1 else "corrido_origen")
             i = k + 1
 
 
