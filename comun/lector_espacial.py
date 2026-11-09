@@ -139,6 +139,24 @@ def _franjas(nums, ancho):
         gc = max(gc, key=len, default=[])
         if len(gc) >= 3:
             franjas.append(gc[len(gc) // 2])
+    if not franjas:
+        # Pagina de un fondo chico sin ningun monto de 3+ digitos (estado en miles de dolares:
+        # "39", "25", "(7)"): antes no se leia nada. Solo cuando no hubo franjas, asi que las
+        # paginas que ya se leian quedan igual. Columnas de enteros cortos alineados (>= 3);
+        # las dos de mas a la derecha (la de notas, si la hay, queda a la izquierda).
+        cortos = sorted(w[2] for w in nums if w[2] > ancho * 0.45
+                        and re.fullmatch(r"\d{1,3}", w[0].strip("()-−–— "))
+                        and not re.fullmatch(r"(19|20)\d\d", w[0].strip("()-−–— ")))
+        gc = []
+        for x in cortos:
+            if gc and x - gc[-1][-1] <= GAP_FRANJA / 4:
+                gc[-1].append(x)
+            else:
+                gc.append([x])
+        cols = [g[len(g) // 2] for g in gc if len(g) >= 3]
+        # Dos columnas como minimo: una sola suele ser la de notas de un estado con puros
+        # guiones, o los numeros de pagina de un indice (en la corrida completa leia basura).
+        franjas = cols[-2:] if len(cols) >= 2 else []
     return franjas
 
 

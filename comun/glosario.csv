@@ -1,0 +1,21 @@
+codigo,estado,patron,excluir,nota
+TotalActivo,ESF,totalactivos?,,
+TotalPasivo,ESF,totalpasivos?,,"Total pasivo (excluido el activo neto atribuible a participes)"
+ActivoNetoAtribuibleALosParticipes,ESF,activos?netos?atribuibles?,excluido|totalpasivo,"no el 'Total pasivo (excluido el activo neto atribuible...)'"
+TotalIngresosPerdidasNetosDeLaOperacion,ERI,total(de)?ingresos,,
+TotalGastosDeOperacion,ERI,totalgastos,,
+UtilidadPerdidaDeLaOperacionAntesDeImpuesto,ERI,(utilidad|perdida|resultado).*antesdeimpuesto,,
+UtilidadPerdidaDeLaOperacionDespuesDeImpuesto,ERI,(utilidad|perdida|resultado).*despuesdeimpuesto,,
+FlujoNetoOriginadoPorActividadesDeLaOperacion,EFE,flujos?neto.*operaci,financiamiento,
+FlujoNetoOriginadoPorActividadesDeFinanciamiento,EFE,flujos?neto.*financiamiento,,
+AumentoNetoDeEfectivoYEfectivoEquivalente,EFE,(aumento|disminuci|incremento|variaci).*net[oa].*efectivo,,"tambien '(Disminucion) aumento neto'"
+SaldoInicialDeEfectivoYEfectivoEquivalente,EFE,saldoinicial|efectivo.*al(inicio|principio)|(inicio|comienzo)del(periodo|ejercicio),,
+SaldoFinalDeEfectivoYEfectivoEquivalente,EFE,saldofinal|efectivo.*al(final|cierre)|(final|cierre)del(periodo|ejercicio),,
+DiferenciasDeCambioNetasSobreEfectivoYEfectivoEquivalente,ERI|EFE,(diferencias?|variaci|efecto).*(cambio).*efectivo,aumento|disminuci|incremento|saldo,"no la linea 'aumento neto ... antes del efecto de las diferencias de cambio'"
+EfectivoYEfectivoEquivalente,ESF,^efectivoy(efectivo)?equivalentes?(alefectivo|deefectivo)?$,,"tambien 'Efectivo y equivalentes al efectivo'"
+RemuneracionesSociedadAdministradora,ESF,^remuneraciones,,"tambien 'Remuneraciones por pagar'"
+OtrosEri,ERI,^otros(o|ingresos[a-z]*)?$,,"'Otros' entre los ingresos de la ERI"
+ResultadoEnVentaDeInstrumentosFinancieros,ERI,resultados?en(la)?ventas?de(instrumentos)?financieros|resultados?en(la)?ventas?deinstrumentos,,
+AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios,ERI,antesde(la)?distribuci|activos?netos?atribuible.*operacion$,despues,"sin la palabra 'antes' cuando la linea termina en 'de la operacion'"
+AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios,ERI,despuesde(la)?distribuci,,
+CambiosNetosEnValorRazonableDeActivosYPasivosFinancierosAValorRazonableConEfectoEnResultados,ERI,cambiosnetosenvalorrazonable,,

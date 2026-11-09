@@ -655,3 +655,21 @@ Efecto en el 04c: 332 → **362 casos de error en 296 fondo-año** (+30 netos; l
 **Precisión** (`revision_04c_efe`, 10 casos): 6 errores reales — tipeo del XML (7.000), dos PDF que no suman, y tres fondos de una misma AGF en 2023-2024 cuyo EFE no presenta el aumento neto o pone en esa línea el saldo final del año anterior (el saldo final cuadra) —; 1 otro (reexpresión del comparativo en el reporte siguiente); 3 de lectura: uno corregido arriba y dos glosas que el 03b no reconoce (saldo final y diferencia de cambio con otra redacción), que quedan para el lector unificado.
 
 **Pendiente (lector unificado)**: sinónimos de glosas en una sola tabla para todas las etapas; montos corridos una línea cuando la glosa de un total ocupa dos líneas (también en la ERI de la ficha).
+
+### D-L1. Lector unificado, paso 1: ESF, ERI y EFE (2026-11-09)
+
+Una sola lectura del PDF y un solo emparejador para todas las etapas (`comun/lector.py`, `comun/emparejar.py`, `comun/glosario.csv`). Ninguna etapa lo usa todavia; `verificacion/diag_lector.py` escribe `procesado/lineas_pdf.csv` y mide.
+
+**Lector** (no usa el XML): envuelve `filas_espaciales` y agrega:
+- Estado de cada linea por titulo (en cualquier parte de una linea corta, tambien precedido del nombre del fondo); una pagina sin titulo se clasifica por lineas tipicas (total activo, total gastos, aportes de cuotas, flujo neto) y, si no hay, hereda la anterior.
+- Filas de fecha, anio, nota o pagina leidas como montos: `encabezado`, no se emparejan.
+- Glosas partidas (`glosa_partida`): montos en la primera linea (la glosa quedo abierta o la siguiente empieza en minuscula), en la ultima (vacia, solo signo "(+)" o cola como "entregados en garantia", "EQUIVALENTE") o repartidos entre las dos.
+- `lector_espacial`: una pagina sin ningun monto de 3+ digitos (fondo en miles de dolares) no se leia; ahora, solo cuando no hay franjas, se buscan dos columnas de enteros cortos alineados (un fondo). Con una sola columna leia la de notas o un indice: se exigen dos.
+
+**Emparejador** (usa el XML, no las validaciones): glosario (redacciones y exclusiones; manda sobre la similitud, que llega a 0,99), similitud tambien sobre el texto sin espacios (PDF extraidos pegados o con letras separadas), uno a uno: glosa, luego valor.
+
+**Montos corridos**: la primera version usaba solo el XML y en una muestra de 15 acerto en 2. Corregia un PDF bien leido cuando el corrido estaba en el XML (un fondo: valor razonable 10.583 y venta 552 en el PDF; venta 10.583 y otros 552 en el XML), y tomaba glosas partidas por corrimientos. Ahora se corrige solo con evidencia de lectura: la linea que sobra con montos no es una cuenta (sin glosa, encabezado "...:" o sin codigo), montos >= 100, y ninguna otra linea con la misma glosa ya tiene el monto. Quedan 15 renglones en 14 fondo-anio.
+
+**Cobertura** (4.258 fondo-anio; cuentas del XML con valor != 0 halladas en el PDF / con glosa y valor): ESF 98,2 / 96,1; ERI 98,0 / 96,8; EFE 97,8 / 96,8. Base sin glosario ni corridos: ESF 88,8 en glosa y valor.
+
+**Pendiente**: estados sin renglones (ESF 63, ERI 80, EFE 82): en una muestra de 15, 10 son paginas que no estan en `paginas_estados` del 03 (el 03a solo guarda esas paginas) y 5 paginas con texto sin montos leidos. Propuesta: 03/03a con el rango continuo de paginas. ECP en el paso 1b.
