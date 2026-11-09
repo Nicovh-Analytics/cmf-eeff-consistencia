@@ -57,7 +57,9 @@ RE_COLA = re.compile(r"^(y)?(efectivo)?equivalentes?(alfinal|alinicio)?$|^partic
 RE_ABIERTA = re.compile(r"(\b(de|del|y|e|la|las|el|los|en|por|a|al|o|u|sobre|con|neto|netos)|[(,-])$")
 
 
-RE_CONECTOR = re.compile(r"^(de|del|la|las|el|los|y|e|en|por|a|al|o|sobre)\s", re.I)
+# el conector va seguido de una palabra (>= 2 letras): en un PDF con letras separadas
+# "O t r o s ingresos" empieza con "O " y no es continuacion de nada
+RE_CONECTOR = re.compile(r"^(de|del|la|las|el|los|y|e|en|por|a|al|o|sobre)\s+[^\W\d_]{2,}", re.I)
 
 
 def es_cola(glosa):
@@ -129,6 +131,21 @@ def paginas_lector(paginas_estados, n_paginas=None):
     # Con menos de 4 paginas el 03 vio solo parte de los estados (hay 4): se mira mas lejos.
     margen = 1 if len(ps) >= 4 else 3
     return [p for p in range(max(1, ps[0] - margen), ps[-1] + margen + 1) if n_paginas is None or p <= n_paginas]
+
+
+def paginas_de(paginas_estados, coords):
+    """(paginas a leer, base) de un reporte. Con paginas del 03: paginas_lector. Sin ellas
+    (03 "sin_paginas_de_estados" o "sin_texto"): todas las del cache, como agregadas (cada una
+    se usa solo si trae titulo o lineas tipicas de un estado)."""
+    if coords is None:
+        return [], set()
+    if paginas_estados is not None and not (isinstance(paginas_estados, float) and paginas_estados != paginas_estados):
+        if isinstance(paginas_estados, float):
+            paginas_estados = str(int(paginas_estados))      # una sola pagina leida como numero
+        base = [int(p) for p in str(paginas_estados).split(",") if p.strip().isdigit()]
+        if base:
+            return [p for p in paginas_lector(base) if str(p) in coords["paginas"]], set(base)
+    return sorted(int(p) for p in coords["paginas"]), set()
 
 
 def leer_estados(coords, paginas, base=None):

@@ -7,7 +7,8 @@ Complemento del 03a para lo que pdfplumber no puede leer:
     estado y casi sin texto -> el estado es una imagen.
   - paginas con texto ilegible: el PDF trae palabras pero cada una es "(cid:12)(cid:3)..."
     (fuente sin tabla de caracteres; una plantilla de 2018). Se buscan en el cache del 03a
-    (paginas de comun.lector.paginas_lector) y se hace OCR de las que tienen mayoria "(cid:".
+    (paginas de comun.lector.paginas_lector) y se hace OCR de las que tienen mayoria "(cid:",
+    y de las que traen el titulo de un estado con la tabla como imagen.
   - con --sin-texto: PDF escaneados completos (estado "sin_texto" del 03). Se hace
     OCR de las primeras MAX_PAG paginas y se guardan las que tienen el titulo de un
     estado y montos.
@@ -60,13 +61,29 @@ def leer_gz(ruta):
 MIN_CID = 0.5     # fraccion de palabras "(cid:" para considerar ilegible una pagina
 
 
+MAX_PALABRAS_IMAGEN = 80   # titulo y pie con texto, la tabla como imagen: pocas palabras y sin montos
+
+
 def paginas_cid(rut, anio, pdf):
-    """Paginas del cache del 03a cuyo texto es ilegible ("(cid:N)" en vez de letras)."""
+    """Paginas del cache del 03a que no se pueden leer como texto:
+      - texto ilegible ("(cid:N)" en vez de letras);
+      - el titulo de un estado con la tabla como imagen (pocas palabras, sin montos): lo mismo
+        que paginas_sin_tabla del 03, pero tambien en las paginas que agrega el lector y en los
+        PDF que el 03 no ubico ("sin_paginas_de_estados")."""
     d = leer_gz(DIR_COORDS / str(rut) / str(anio) / (Path(pdf).stem + ".json.gz"))
     if not d or d.get("error"):
         return []
-    return sorted(int(p) for p, v in d["paginas"].items()
-                  if v["palabras"] and sum("(cid:" in w[0] for w in v["palabras"]) >= MIN_CID * len(v["palabras"]))
+    out = []
+    for p, v in d["paginas"].items():
+        ws = v["palabras"]
+        if not ws:
+            continue
+        texto = " ".join(w[0] for w in ws)
+        cid = sum("(cid:" in w[0] for w in ws) >= MIN_CID * len(ws)
+        imagen = len(ws) <= MAX_PALABRAS_IMAGEN and RE_TITULO.search(texto) and len(RE_MONTO.findall(texto)) < 3
+        if cid or imagen:
+            out.append(int(p))
+    return sorted(out)
 
 
 def es_pagina_de_estado(datos):
@@ -121,9 +138,9 @@ def main():
         cache = ruta_ocr(r.rut, r.anio, r.pdf)
         if not pdf.exists():
             continue
-        if r.estado == "ok":
+        if r.estado in ("ok", "sin_paginas_de_estados"):
             sin_tabla = ([int(p) for p in r.paginas_sin_tabla.split(",") if p.strip().isdigit()]
-                         if isinstance(r.paginas_sin_tabla, str) else [])
+                         if r.estado == "ok" and isinstance(r.paginas_sin_tabla, str) else [])
             cid = paginas_cid(r.rut, r.anio, r.pdf)
             n_cid += bool(cid)
             paginas, filtrar = sorted(set(sin_tabla) | set(cid)), False
@@ -148,7 +165,7 @@ def main():
         tareas.append((r.rut, int(r.anio), r.pdf, paginas, filtrar, previo))
 
     print(f"OCR ({_LANG}): {len(tareas)} fondo-anio por procesar "
-          f"({sum(len(t[3]) for t in tareas)} paginas; fondo-anio con texto ilegible: {n_cid}), "
+          f"({sum(len(t[3]) for t in tareas)} paginas; fondo-anio con paginas ilegibles o imagen: {n_cid}), "
           f"{N_PROCESOS} procesos")
     t0, hechas, con_error, paginas_ok = time.time(), 0, 0, 0
     with ProcessPoolExecutor(N_PROCESOS, initializer=_init) as ex:

@@ -18,9 +18,10 @@ simple vista durante la verificacion manual:
   - hoja Huerfanos: montos sin par del cruce en t y t+1, del PDF (con la glosa de su linea) y
     del XML (cuenta no encontrada en el PDF).
 
-ESF, ERI y EFE en forma de estado (si hay lectura espacial del PDF, como en el 03b):
-  - cada linea leida del PDF se empareja con una cuenta del XML: primero por glosa
-    parecida; si no, por valor igual (actual o anterior);
+ESF, ERI y EFE en forma de estado, con el lector unificado (comun/lector.py + comun/emparejar.py):
+  - lectura: estado de cada pagina por titulo (o por contenido si el titulo impreso es de otro
+    estado), glosas partidas unidas, montos corridos corregidos solo con evidencia de lectura;
+  - cada renglon se empareja con una cuenta del XML: glosario y glosa parecida; si no, valor;
   - bloque 1: coinciden por glosa, en el orden del estado (XML);
     bloque 2: coinciden solo por valor -> glosa del PDF al lado de la cuenta del XML;
     bloque 3: sin coincidencia (solo PDF / solo XML con valor);
@@ -54,7 +55,7 @@ Uso:
                                               revision (columnas rut y anio)
 
 Lee:      data/procesado/encabezados.csv, cuentas.csv, cruce_resumen.csv,
-          cruce_detalle.csv, cruce_huerfanos.csv, estructura_efe.csv (paginas),
+          cruce_detalle.csv, cruce_huerfanos.csv,
           ecp_chequeos.csv, casos_unicos.csv (si existe); cache de coordenadas del 03a
 Escribe:  verificacion/fichas/{rut}_{anio}.xlsx  (regenerables: no versionar)
 
@@ -66,11 +67,11 @@ de cambio sobre efectivo, en ERI y EFE) heredan la seccion vigente.
 import importlib
 import re
 import sys
-import unicodedata
-from difflib import SequenceMatcher
 from pathlib import Path
 from comun.secciones import asignar_secciones
 from comun.lector_espacial import cargar_coords, filas_espaciales
+from comun.lector import leer_estados, paginas_de
+from comun.emparejar import emparejar as emparejar_comun
 
 import pandas as pd
 from openpyxl import Workbook
@@ -127,11 +128,6 @@ class Datos:
         self.res = pd.read_csv(DIR_PROC / "cruce_resumen.csv", dtype={"rut": str})
         self.det = pd.read_csv(DIR_PROC / "cruce_detalle.csv", dtype={"rut": str, "serie": str})
         self.hue = pd.read_csv(DIR_PROC / "cruce_huerfanos.csv", dtype={"rut": str})
-        e = pd.read_csv(DIR_PROC / "estructura_efe.csv", dtype={"rut": str},
-                        usecols=["rut", "anio", "subtotal", "ubicado", "pagina"])
-        e = e[e["ubicado"] == True].dropna(subset=["pagina"])
-        e["estado"] = e["subtotal"].map({n: cfg["estado"] for n, cfg in SUBTOTALES.items()})
-        self.pags = {k: sorted({int(p) for p in g["pagina"]}) for k, g in e.groupby(["rut", "anio", "estado"])}
         ch = pd.read_csv(DIR_PROC / "ecp_chequeos.csv", dtype={"rut": str})
         k = pd.DataFrame(claves, columns=["rut", "anio"])
         self.ecp = ch.merge(pd.concat([k, k.assign(anio=k["anio"] + 1), k.assign(anio=k["anio"] - 1)])
@@ -318,8 +314,6 @@ def hoja_ecp(ws, cta_ecp, comp: Comparador):
 # Forma de estado: lineas del PDF (lectura espacial) frente a las cuentas del XML
 # ---------------------------------------------------------------------------
 TOL = 2                         # diferencia de redondeo aceptada al emparejar por valor
-MIN_GLOSA = 0.75                # parecido minimo de glosas para emparejar
-STOP = {"de", "del", "la", "las", "el", "los", "y", "en", "por", "a", "al", "con", "sobre", "o", "e"}
 FILL_SUBT = PatternFill("solid", start_color="DDEBF7")     # azul: subtotal / identidad
 FILL_CASO = PatternFill("solid", start_color="F4B6C2")     # rosado: cuenta de un caso del 04c
 FILL_DIF = PatternFill("solid", start_color="FFC7CE")      # rojo: diferencia distinta de 0
@@ -350,83 +344,57 @@ OPCIONALES = {"DiferenciasDeCambioNetasSobreEfectivoYEfectivoEquivalente",
               "ImpuestosALasGananciasPorInversionesEnElExterior"}
 
 
-def _tokens(texto):
-    t = unicodedata.normalize("NFKD", str(texto)).encode("ascii", "ignore").decode().lower()
-    return [w for w in re.findall(r"[a-z]+", t) if w not in STOP]
-
-
-def parecido(glosa_pdf, codigo):
-    """0-1: max(SequenceMatcher, fraccion de palabras del XML presentes en la glosa del PDF)."""
-    a, b = _tokens(glosa_pdf), _tokens(legible(codigo))
-    if not a or not b:
-        return 0.0
-    contiene = len(set(b) & set(a)) / len(set(b))
-    return max(SequenceMatcher(None, " ".join(a), " ".join(b)).ratio(), contiene)
-
-
-def lineas_pdf(coords, paginas):
-    """[(pagina, glosa, glosa_ext, actual, anterior)] con monto, en orden de lectura. glosa_ext
-    suma hasta 2 lineas previas sin monto (glosas partidas en varias lineas)."""
-    out = []
-    for p in paginas:
-        pag = coords["paginas"].get(str(p))
-        if not pag:
-            continue
-        filas, _ = filas_espaciales(pag)
-        previas = []
-        for g, a, b, _ in filas:
-            if a is None and b is None:
-                previas = (previas + [g])[-2:]
-                continue
-            out.append((p, g.strip(), " ".join(previas + [g]).strip(), a, b))
-            previas = []
-    return out
-
-
 def glosa_vista(ln):
     """Glosa partida en varias lineas ('entregados en garantia (+)'): se muestra completa."""
     return ln[2] if ln[1][:1].islower() and ln[2] != ln[1] else ln[1]
 
 
-def emparejar(lineas, xml):
-    """lineas: [(pag, glosa, glosa_ext, act, ant)]; xml: {codigo: (act, ant)} (orden del estado).
-    Devuelve {i_linea: (codigo, 'glosa'|'glosa y valor'|'valor')}. Uno a uno; primero glosa
-    (mayor parecido; a igualdad, el que ademas calza en valor), luego valor."""
-    igual = lambda p, x: p is not None and x is not None and (p or x) and abs(abs(p) - abs(x)) <= TOL
-    calza = lambda ln, c: igual(ln[3], xml[c][0]) or igual(ln[4], xml[c][1])
-    cand = []
-    for i, ln in enumerate(lineas):
-        for c in xml:
-            sc = max(parecido(ln[1], c), parecido(ln[2], c))
-            sub = next((cfg for cfg in SUBTOTALES.values() if cfg["codigo"] == c), None)
-            if sub is not None and sub["glosa"].search(M03B.norm(ln[2])):
-                sc = max(sc, 0.95)                     # glosa esperada del subtotal (03b)
-            if sc >= MIN_GLOSA:
-                cand.append((sc + (0.1 if calza(ln, c) else 0), i, c))
-    par, usadas_l, usadas_c = {}, set(), set()
-    for sc, i, c in sorted(cand, reverse=True):
-        if i not in usadas_l and c not in usadas_c:
-            par[i] = (c, "glosa y valor" if calza(lineas[i], c) else "glosa")
-            usadas_l.add(i), usadas_c.add(c)
-    for i, ln in enumerate(lineas):
-        if i in usadas_l:
-            continue
-        c = next((c for c in xml if c not in usadas_c and calza(ln, c)), None)
-        if c:
-            par[i] = (c, "valor")
-            usadas_l.add(i), usadas_c.add(c)
-    return par
-
-
-def hoja_forma(ws, est, cta_estado, lineas, casos_cod):
-    """Hoja de un estado en forma de estado. Devuelve un resumen para la consola."""
+def xml_estado(cta_estado):
+    """{codigo: (actual, anterior)} de un estado (sin series). Una cuenta sin valor en una columna
+    que el XML si trae = 0."""
     cta_estado = cta_estado[cta_estado["serie"].isna()]
-    hay_ctx = set(cta_estado["contexto"])            # una cuenta sin valor en una columna que el XML si trae = 0
+    hay_ctx = set(cta_estado["contexto"])
     xml = {}
     for c in cta_estado["codigo"].drop_duplicates():
         m = cta_estado[cta_estado["codigo"] == c].set_index("contexto")["valor"]
         xml[c] = tuple(m.get(ctx, 0 if ctx in hay_ctx else None) for ctx in ("PeriodoActual", "PeriodoAnterior"))
-    par = emparejar(lineas, xml)
+    return xml
+
+
+COINCIDE = {"ambos": "glosa y valor", "glosa": "glosa", "valor": "valor"}
+NOTA_METODO = {"corrido": " (montos corridos una linea)", "monto_sin_glosa": " (monto en linea sin texto)"}
+
+
+def leer_reporte(coords, paginas_estados, cta):
+    """Lector unificado sobre un reporte: {estado: (lineas, par)} para ESF, ERI y EFE, y
+    {pagina: (estado, titulo impreso)} de las paginas cuyo titulo es de otro estado.
+    lineas: [(pagina, glosa, glosa_ext, actual, anterior)] con monto; par: {i: (codigo, coincide)}."""
+    paginas, base = paginas_de(paginas_estados, coords)
+    if not paginas:
+        return {}, {}
+    rs, _ = leer_estados(coords, paginas, base=base)
+    out, rotulos = {}, {}
+    for est in ("ESF", "ERI", "EFE"):
+        sub = [r for r in rs if r["estado"] == est]
+        emparejar_comun(sub, xml_estado(cta[cta["estado_fin"] == est]), est)
+        lineas, par = [], {}
+        for r in sub:
+            if r.get("rotulo"):
+                rotulos[r["pagina"]] = (est, r["rotulo"])
+            if r["metodo"] == "encabezado" or (r["actual"] is None and r["anterior"] is None):
+                continue
+            if r["codigo"]:
+                par[len(lineas)] = (r["codigo"], COINCIDE[r["coincide"]] + NOTA_METODO.get(r["metodo"], ""))
+            lineas.append((r["pagina"], r["glosa"], (r["previa"] + " " + r["glosa"]).strip(),
+                           r["actual"] or 0, r["anterior"] or 0))
+        if lineas:
+            out[est] = (lineas, par)
+    return out, rotulos
+
+
+def hoja_forma(ws, est, cta_estado, lineas, par, casos_cod):
+    """Hoja de un estado en forma de estado. Devuelve un resumen para la consola."""
+    xml = xml_estado(cta_estado)
     de_cod = {c: i for i, (c, _) in par.items()}
     # ventana del estado en el PDF: de la primera a la ultima linea emparejada (en una pagina
     # compartida, las lineas de otro estado no entran como "solo PDF")
@@ -781,12 +749,10 @@ def hoja_ecp_forma(ws, ch, cta_ecp, casos_cod):
 # Hoja t+1: la cifra de t (columna actual) frente a como la muestra el reporte de t+1
 # (columna anterior), en PDF y en XML; y continuidad cierre t = inicio t+1
 # ---------------------------------------------------------------------------
-def valores_pdf(lineas, cta_estado):
-    """{codigo: (actual, anterior)} del PDF, emparejando sus lineas con el XML del mismo reporte."""
-    c = cta_estado[cta_estado["serie"].isna()]
-    xml = {k: (g.set_index("contexto")["valor"].get("PeriodoActual"),
-               g.set_index("contexto")["valor"].get("PeriodoAnterior")) for k, g in c.groupby("codigo", sort=False)}
-    return {cod: (lineas[i][3], lineas[i][4]) for i, (cod, _) in emparejar(lineas, xml).items()}
+def valores_pdf(rep, est):
+    """{codigo: (actual, anterior)} del PDF de un reporte (emparejado con su propio XML)."""
+    lineas, par = rep["lineas"].get(est, ([], {}))
+    return {cod: (lineas[i][3], lineas[i][4]) for i, (cod, _) in par.items()}
 
 
 def ecp_series(ch, cta_ecp, columna, ctx):
@@ -921,8 +887,7 @@ def hoja_t1(ws, t, t1, anio):
     for est in ("ESF", "ERI", "EFE"):
         c0 = t["cta"][(t["cta"]["estado_fin"] == est) & t["cta"]["serie"].isna()]
         c1 = t1["cta"][(t1["cta"]["estado_fin"] == est) & t1["cta"]["serie"].isna()]
-        p0 = valores_pdf(t["lineas"].get(est, []), c0) if t["lineas"].get(est) else {}
-        p1 = valores_pdf(t1["lineas"].get(est, []), c1) if t1["lineas"].get(est) else {}
+        p0, p1 = valores_pdf(t, est), valores_pdf(t1, est)
         x0 = c0[c0["contexto"] == "PeriodoActual"].set_index("codigo")["valor"]
         x1 = c1[c1["contexto"] == "PeriodoAnterior"].set_index("codigo")["valor"]
         cods = list(dict.fromkeys(list(c0["codigo"]) + list(c1["codigo"])))
@@ -977,8 +942,7 @@ def hoja_t1(ws, t, t1, anio):
                                  "SaldoInicialDeEfectivoYEfectivoEquivalente"),):
         c0e = t["cta"][(t["cta"]["estado_fin"] == est) & t["cta"]["serie"].isna()]
         c1e = t1["cta"][(t1["cta"]["estado_fin"] == est) & t1["cta"]["serie"].isna()]
-        p0 = valores_pdf(t["lineas"].get(est, []), c0e) if t["lineas"].get(est) else {}
-        p1 = valores_pdf(t1["lineas"].get(est, []), c1e) if t1["lineas"].get(est) else {}
+        p0, p1 = valores_pdf(t, est), valores_pdf(t1, est)
         x0 = c0e[c0e["contexto"] == "PeriodoActual"].set_index("codigo")["valor"]
         x1 = c1e[c1e["contexto"] == "PeriodoActual"].set_index("codigo")["valor"]
         escribir_fila(f"EFE efectivo: saldo final {anio} = saldo inicial {anio + 1}", p0.get(cierre, (None,))[0],
@@ -1147,10 +1111,9 @@ def generar(datos: Datos, rut: str, anio: int):
         r = datos.res[(datos.res["rut"] == rut) & (datos.res["anio"] == a)]
         nom = r["pdf"].iloc[0] if len(r) and pd.notna(r["pdf"].iloc[0]) else None
         co = coords if a == anio else (cargar_coords(rut, a, nom) if nom else None)
-        lin = ({est: lineas_pdf(co, datos.pags.get((rut, a, est), [])) for est in ("ESF", "ERI", "EFE")}
-               if co else {})
+        lin, rot = leer_reporte(co, r["paginas_estados"].iloc[0] if len(r) else None, c)
         ch = datos.ecp[(datos.ecp["rut"] == rut) & (datos.ecp["anio"] == a)]
-        return dict(cta=c, lineas=lin, ch=ch, coords=co)
+        return dict(cta=c, lineas=lin, rotulos=rot, ch=ch, coords=co)
     rep_t, rep_t1, rep_tm1 = reporte(anio), reporte(anio + 1), reporte(anio - 1)
 
     wb = Workbook()
@@ -1167,6 +1130,9 @@ def generar(datos: Datos, rut: str, anio: int):
         ("PDF", str(CMF_HOME / "archivos" / rut / str(anio) / pdf) if pdf else ""),
         ("PDF t+1", _pdf(datos, rut, anio + 1)),
         ("Paginas de estados en el PDF", res["paginas_estados"].iloc[0] if len(res) else ""),
+        ("Titulo impreso de otro estado", "; ".join(f"pag. {p}: {e} bajo el titulo de {t}"
+                                                    for p, (e, t) in sorted(rep_t["rotulos"].items()))
+                                          or "(no)"),
         ("% encontrado (tolerante)", res["pct_tolerante"].iloc[0] if len(res) else ""),
         ("", ""),
         ("Como leer", ""),
@@ -1207,14 +1173,13 @@ def generar(datos: Datos, rut: str, anio: int):
         if parte.empty:
             ws["A1"] = "(sin cuentas en el XML para este estado)"
             continue
-        pags = datos.pags.get((rut, anio, est), [])
         ch = datos.ecp[(datos.ecp["rut"] == rut) & (datos.ecp["anio"] == anio)]
         if est == "ECP" and len(ch):
             ws.title = "ECP forma"
             resumen.append(hoja_ecp_forma(ws, ch, parte, casos_cod))
-        elif est != "ECP" and coords is not None and pags:
+        elif est != "ECP" and est in rep_t["lineas"]:
             ws.title = f"{est} forma"
-            resumen.append(hoja_forma(ws, est, parte, rep_t["lineas"].get(est, []), casos_cod))
+            resumen.append(hoja_forma(ws, est, parte, *rep_t["lineas"][est], casos_cod))
         else:                       # sin lectura por lineas: vista del cruce (identificacion numerica)
             ws.title = f"{est} cruce"
             (hoja_ecp if est == "ECP" else hoja_estado)(ws, parte, comp)

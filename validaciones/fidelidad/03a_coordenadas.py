@@ -42,6 +42,7 @@ DIR_PROC = CMF_HOME / "procesado"
 DIR_COORDS = CMF_HOME / "coords_pdf"
 N_PROCESOS = max(1, (os.cpu_count() or 2) - 2)
 VERSION = 1
+MAX_PAG = 15            # fondos sin paginas del 03: se extraen las primeras (los estados van al inicio)
 
 
 def ruta_cache(rut, anio, pdf):
@@ -93,16 +94,20 @@ def extraer(args):
 
 
 def main():
-    res = pd.read_csv(DIR_PROC / "cruce_resumen.csv", dtype={"rut": str})
-    res = res[res["paginas_estados"].notna() & res["pdf"].notna()]
+    res = pd.read_csv(DIR_PROC / "cruce_resumen.csv", dtype={"rut": str, "paginas_estados": str})
+    # tambien los que el 03 no ubico por cifras ("sin_paginas_de_estados"): las primeras
+    # MAX_PAG paginas; el lector usa solo las que traen titulo o lineas tipicas de un estado
+    res = res[res["pdf"].notna() & (res["paginas_estados"].notna() | (res["estado"] == "sin_paginas_de_estados"))]
     tareas, agregar = [], 0
     for r in res.itertuples(index=False):
-        paginas = [int(p) for p in str(r.paginas_estados).split(",") if p.strip().isdigit()]
+        paginas = ([int(p) for p in str(r.paginas_estados).split(",") if p.strip().isdigit()]
+                   if pd.notna(r.paginas_estados) else list(range(1, MAX_PAG + 1)))
         ruta_pdf = DIR_ARCHIVOS / str(r.rut) / str(r.anio) / r.pdf
         destino = ruta_cache(r.rut, r.anio, r.pdf)
         if not paginas or not ruta_pdf.exists():
             continue
-        paginas = paginas_lector(paginas)
+        if pd.notna(r.paginas_estados):
+            paginas = paginas_lector(paginas)
         previo = None
         if destino.exists() and destino.stat().st_mtime >= ruta_pdf.stat().st_mtime:
             previo = leer_cache(destino)    # ya extraido y el PDF no cambio: solo lo que falta

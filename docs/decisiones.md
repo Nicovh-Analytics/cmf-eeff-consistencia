@@ -696,3 +696,11 @@ Revision de los 88 estados que seguian sin renglones:
 
 **Precision (rotulos)**: muestra de 10 paginas (5 con rotulo ECP, 5 con rotulo ESF/ERI/EFE), revisadas en el PDF: 10/10 llevan impreso el titulo de otro estado. Se incorporan al 04c como caso de presentacion al migrarlo al lector.
 
+### D-L4. Lector: PDF que el 03 no ubica, tablas como imagen y ficha sobre el lector (2026-11-09)
+
+- **Universo**: el lector lee tambien los fondo-anio que el 03 deja fuera: `sin_texto` (PDF escaneado, con el OCR completo del 03a_ocr) y `sin_paginas_de_estados` (el 03 no encontro cifras del XML en el texto). Sin paginas del 03, el 03a extrae las primeras 15 y el lector usa solo las que traen titulo o lineas tipicas de un estado. Leidos: 4.493 de 4.510 (ok 4.280/4.280, sin_texto 193/195, sin_paginas 20/35). Estos fondo-anio no tienen cruce numerico del 04: la ficha muestra la lectura del PDF pero no huerfanos.
+- **Tabla como imagen**: paginas con el titulo de un estado en texto y la tabla como imagen (<= 80 palabras, sin montos; un fondo). El 03 solo hacia OCR de estas paginas dentro de las que ubicaba; el 03a_ocr lo hace en todas las del cache. La lectura por OCR puede traer digitos mal leidos: una diferencia de un PDF leido por OCR se confirma en el PDF.
+- **Conector en PDF con letras separadas**: "O t r o s ingresos" empieza con "O " y se tomaba como el conector "o" de una glosa partida (se pegaba a la linea de arriba). El conector debe ir seguido de una palabra de >= 2 letras.
+- **Ficha**: las hojas de forma, t-1 y t+1 leen con el lector y el emparejador comunes (sin el emparejador propio ni las paginas del 03b). En 12 casos de prueba: 9 iguales o mejores (tres PDF con texto pegado o letras separadas pasan de 2-3 a 8-17 cuentas por glosa por estado; errores de lectura de saldo final, diferencia de cambio y "468"/"4" desaparecen), uno lee un monto que antes se perdia y uno corregido (el conector).
+
+**Cobertura** (cuentas del XML con valor != 0 halladas / con glosa y valor): ESF 98,9 / 96,7; ERI 98,9 / 97,6; EFE 98,9 / 97,8, sobre 4.510 fondo-anio.
