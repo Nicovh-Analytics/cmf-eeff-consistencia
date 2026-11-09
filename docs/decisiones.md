@@ -684,3 +684,12 @@ Los estados sin renglones (63 ESF, 80 ERI, 82 EFE fondo-anio) tenian tres causas
 **Resultado** (4.280 de 4.280 fondo-anio leidos; cuentas del XML con valor != 0 halladas / con glosa y valor): ESF 99,1 / 97,0; ERI 98,9 / 97,6; EFE 99,1 / 98,0. Estados sin renglones: 22 / 38 / 28.
 
 El 03b, el 03c y la ficha usan el mismo cache: con el OCR nuevo y las paginas de montos chicos del lector_espacial leen paginas que antes salian vacias. Se mide en la regresion de cada etapa al migrarla.
+
+### D-L3. Lector: titulo impreso de otro estado y fondos en su primer periodo (2026-11-09)
+
+Revision de los 88 estados que seguian sin renglones:
+- **Titulo impreso equivocado.** Hay PDF cuyo balance va bajo "Estado de Resultados Integrales" o "Estados de Flujos de efectivo" (la plantilla repite el titulo de otra pagina). El lector seguia el titulo. Ahora, si la pagina tiene >= 2 lineas tipicas de un solo estado y ninguna del titulado (y un solo titulo), manda el contenido; el titulo impreso queda en `rotulo` (`verificacion/diag_lector_rotulos.csv`). Primera corrida: 55 paginas en 49 fondo-anio. Es un candidato a hallazgo de presentacion: se verifica a mano antes de usarlo.
+- **Fondo en su primer periodo con montos chicos**: una sola columna de enteros cortos. Se acepta si son montos (alguno de 3 digitos o >= 2 negativos), no notas ni un indice.
+- **Limitacion del 03**: en algunos PDF de 2011 las paginas que entrega el 03 son notas (riesgo, vencimientos) y no los estados; el lector no las corrige.
+
+**Resultado**: estados sin renglones 7 / 13 / 12 (ESF / ERI / EFE; antes 63 / 80 / 82). Cuentas del XML halladas / con glosa y valor: ESF 99,5 / 97,4; ERI 99,5 / 98,2; EFE 99,4 / 98,3.

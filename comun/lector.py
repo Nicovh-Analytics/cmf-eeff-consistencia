@@ -95,12 +95,17 @@ def es_encabezado(glosa, act, ant):
     return bool(RE_ENCABEZADO.search(n)) and (anios or chicos)
 
 
-def anclas_fuertes(filas, minimo=2):
-    """Pagina agregada sin titulo pero con >= 2 lineas tipicas de UN estado (un EFE con
-    "Notas a los estados financieros" como encabezado corrido y sin titulo propio)."""
-    cuenta = {e: sum(1 for g, *_ in filas if rx.search(norm(g))) for e, rx in ANCLAS.items()}
+def contar_anclas(filas):
+    return {e: sum(1 for g, *_ in filas if rx.search(norm(g))) for e, rx in ANCLAS.items()}
+
+
+def anclas_fuertes(filas, minimo=2, cuenta=None):
+    """Estado con >= 2 lineas tipicas en la pagina, si es uno solo; si no, None.
+    Sirve para una pagina agregada sin titulo (un EFE bajo "Notas a los estados financieros")
+    y para un titulo equivocado (un ESF impreso bajo "Estado de Resultados Integrales")."""
+    cuenta = cuenta or contar_anclas(filas)
     fuertes = [e for e, n in cuenta.items() if n >= minimo]
-    return len(fuertes) == 1
+    return fuertes[0] if len(fuertes) == 1 else None
 
 
 def estado_por_anclas(filas):
@@ -144,10 +149,13 @@ def leer_estados(coords, paginas, base=None):
         filas, _ = filas_espaciales(pg)
         encab = [(a is None and b is None) or es_encabezado(g, a, b) for g, a, b, _ in filas]
         titulos = {titulo(g) for (g, *_), e in zip(filas, encab) if e} - {None}
+        cuenta = contar_anclas(filas)
+        por_contenido = anclas_fuertes(filas, cuenta=cuenta)
+        rotulo = None                         # titulo impreso cuando el contenido es de otro estado
         indice = len(titulos) >= 3            # indice o informe del auditor: nombra 3+ estados
         if base is not None and p not in base and (indice or not (any(
                 e and titulo(g) for (g, *_), e in list(zip(filas, encab))[:MAX_FILAS_TITULO])
-                or anclas_fuertes(filas))):
+                or por_contenido)):
             continue
         if indice or not titulos:
             estado = estado_por_anclas(filas) or estado
@@ -157,7 +165,14 @@ def leer_estados(coords, paginas, base=None):
             if sin_cifras and not indice:
                 t = titulo(glosa)
                 if t:
-                    estado, previas = t, []
+                    # Titulo de otro estado sobre una pagina cuyo contenido es inequivoco
+                    # (>= 2 lineas tipicas de un solo estado y ninguna del titulado): manda el
+                    # contenido y el titulo impreso queda en "rotulo" (es un hallazgo del PDF).
+                    if por_contenido and por_contenido != t and not cuenta.get(t) and len(titulos) == 1:
+                        estado, rotulo = por_contenido, t
+                    else:
+                        estado = t
+                    previas = []
                     continue
             if not sin_cifras:                      # estados con montos en la pagina
                 pags.setdefault(p, [])
@@ -198,6 +213,7 @@ def leer_estados(coords, paginas, base=None):
             n_por_estado[estado] = n + 1
             out.append({"pagina": p, "estado": estado, "renglon": n, "glosa": glosa.strip(),
                         "previa": " ".join(previas).strip(), "actual": act, "anterior": ant,
-                        "metodo": "encabezado" if sin_cifras and not sin_monto else "espacial"})
+                        "metodo": "encabezado" if sin_cifras and not sin_monto else "espacial",
+                        "rotulo": rotulo})
             previas = (previas + [glosa.strip()])[-2:] if sin_monto else []
     return out, pags

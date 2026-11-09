@@ -144,19 +144,28 @@ def _franjas(nums, ancho):
         # "39", "25", "(7)"): antes no se leia nada. Solo cuando no hubo franjas, asi que las
         # paginas que ya se leian quedan igual. Columnas de enteros cortos alineados (>= 3);
         # las dos de mas a la derecha (la de notas, si la hay, queda a la izquierda).
-        cortos = sorted(w[2] for w in nums if w[2] > ancho * 0.45
+        cortos = sorted((w[2], w[0]) for w in nums if w[2] > ancho * 0.45
                         and re.fullmatch(r"\d{1,3}", w[0].strip("()-−–— "))
                         and not re.fullmatch(r"(19|20)\d\d", w[0].strip("()-−–— ")))
         gc = []
-        for x in cortos:
-            if gc and x - gc[-1][-1] <= GAP_FRANJA / 4:
-                gc[-1].append(x)
+        for x, t in cortos:
+            if gc and x - gc[-1][-1][0] <= GAP_FRANJA / 4:
+                gc[-1].append((x, t))
             else:
-                gc.append([x])
-        cols = [g[len(g) // 2] for g in gc if len(g) >= 3]
+                gc.append([(x, t)])
+        gc = [g for g in gc if len(g) >= 3]
         # Dos columnas como minimo: una sola suele ser la de notas de un estado con puros
         # guiones, o los numeros de pagina de un indice (en la corrida completa leia basura).
-        franjas = cols[-2:] if len(cols) >= 2 else []
+        # Excepcion: una sola columna (fondo en su primer periodo) que tiene montos y no
+        # numeros de nota: alguno de 3 digitos o >= 2 negativos "(7)" / "-7".
+        def es_de_montos(g):
+            ts = [t for _, t in g]
+            return (any(len(t.strip("()-−–— ")) == 3 for t in ts)
+                    or sum(t.startswith(("(", "-", "−", "–", "—")) for t in ts) >= 2)
+        if len(gc) >= 2:
+            franjas = [g[len(g) // 2][0] for g in gc][-2:]
+        elif len(gc) == 1 and es_de_montos(gc[0]):
+            franjas = [gc[0][len(gc[0]) // 2][0]]
     return franjas
 
 
