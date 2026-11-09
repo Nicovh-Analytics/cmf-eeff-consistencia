@@ -693,3 +693,6 @@ Revision de los 88 estados que seguian sin renglones:
 - **Limitacion del 03**: en algunos PDF de 2011 las paginas que entrega el 03 son notas (riesgo, vencimientos) y no los estados; el lector no las corrige.
 
 **Resultado**: estados sin renglones 7 / 13 / 12 (ESF / ERI / EFE; antes 63 / 80 / 82). Cuentas del XML halladas / con glosa y valor: ESF 99,5 / 97,4; ERI 99,5 / 98,2; EFE 99,4 / 98,3.
+
+**Precision (rotulos)**: muestra de 10 paginas (5 con rotulo ECP, 5 con rotulo ESF/ERI/EFE), revisadas en el PDF: 10/10 llevan impreso el titulo de otro estado. Se incorporan al 04c como caso de presentacion al migrarlo al lector.
+
