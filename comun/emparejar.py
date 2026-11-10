@@ -201,3 +201,35 @@ def emparejar(rs, xml, estado, glosario=True, corridos=True):
             rs[i]["codigo"], rs[i]["coincide"] = c, "valor"
             usados_r.add(i), usados_c.add(c)
     return rs
+
+
+# ---------------------------------------------------------------------------
+# Lectura + emparejamiento de un reporte (lo usan el 03b y la ficha)
+# ---------------------------------------------------------------------------
+def xml_estado(c):
+    """{codigo: (actual, anterior)} de las cuentas de UN estado (sin series), en orden del XML.
+    Una cuenta sin valor en una columna que el estado si trae = 0."""
+    hay_ctx = set(c["contexto"])
+    out = {}
+    for cod, g in c.groupby("codigo", sort=False):
+        m = dict(zip(g["contexto"], g["valor"]))
+        out[cod] = tuple(m.get(k, 0 if k in hay_ctx else None) for k in ("PeriodoActual", "PeriodoAnterior"))
+    return out
+
+
+def leer_y_emparejar(coords, paginas_estados, cta):
+    """Renglones del ESF, la ERI y el EFE de un reporte, emparejados con su XML.
+    cta: cuentas del archivo con columna estado_fin (comun.secciones.asignar_secciones).
+    Devuelve ({estado: renglones}, paginas leidas)."""
+    from comun.lector import leer_estados, paginas_de
+    paginas, base = paginas_de(paginas_estados, coords)
+    if not paginas:
+        return {}, []
+    rs, _ = leer_estados(coords, paginas, base=base)
+    out = {}
+    for est in ("ESF", "ERI", "EFE"):
+        sub = [r for r in rs if r["estado"] == est]
+        c = cta[(cta["estado_fin"] == est) & cta["serie"].isna()]
+        emparejar(sub, xml_estado(c), est)
+        out[est] = sub
+    return out, paginas

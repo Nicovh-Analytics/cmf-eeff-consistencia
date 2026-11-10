@@ -1,27 +1,30 @@
 """
-Pasada estructural del PDF: Estado de Flujos de Efectivo
-========================================================
+Pasada estructural del PDF: subtotales del ESF, la ERI y el EFE, e identidades del EFE
+=====================================================================================
 
 Complementa al cruce por numeros (03/04). Aquel busca si cada cifra del XML
 APARECE en el PDF; tiene un punto ciego: si el valor equivocado del PDF
 coincide con otra cifra del XML, no queda huerfano y el error no forma par.
 
-Aqui se lee el EFE por lineas (lector_espacial: posicion, sin XML) y se
-revisa la estructura de cada subtotal (flujo de operacion y de financiamiento):
-  1. Ubicar el subtotal: glosa esperada y al menos UNA columna igual al XML
-     (+-2); si la glosa no aparece, por valor (ambas columnas) -> rotulo distinto.
-  2. Componentes = lineas con montos entre el encabezado de la seccion (o el
-     subtotal anterior) y el subtotal.
+Lectura y emparejamiento: el lector unificado (comun/lector.py + comun/emparejar.py),
+el mismo de la ficha. Cada renglon del PDF ya trae su cuenta del XML (glosa y valor,
+glosa sola o valor solo; uno a uno). Sobre eso:
+  1. Subtotal = el renglon de su codigo. metodo: glosa_y_valor / valor (rotulo distinto)
+     / solo_glosa (el valor impreso difiere del XML).
+  2. Componentes = renglones con montos entre el subtotal anterior del mismo estado y el
+     subtotal; un renglon de otro subtotal o identidad corta, y una linea "subtotal/total"
+     sin cuenta propia justo encima del subtotal con sus mismos montos se salta.
   3. Por columna:
        pdf_suma   = el subtotal impreso es la suma de sus lineas?
        igual_xml  = el subtotal impreso es igual al del XML?
        n lineas   = lineas distintas de cero en PDF vs codigos en XML
        agregacion = cifra del XML que es la suma de 2-3 lineas del PDF sin par
-  4. Clasificacion de los que no suman: probable_error / _tipeo /
+  4. Identidades del EFE (aumento neto, evolucion del efectivo) con los renglones de sus codigos.
+  5. Clasificacion de los que no suman: probable_error / _tipeo /
      _linea_no_sumada, probable_lectura, revisar_linea_faltante.
 
 Lee:      data/procesado/cruce_resumen.csv, encabezados.csv, cuentas.csv
-          data/coords_pdf/...                  (03a_coordenadas.py)
+          data/coords_pdf/...                  (03a_coordenadas.py, 03a_ocr.py)
 Escribe:  data/procesado/estructura_efe.csv          1 fila por fondo-anio-subtotal-columna
           data/procesado/estructura_efe_no_suma.csv  los que no suman, clasificados
 """
@@ -34,7 +37,9 @@ from pathlib import Path
 import pandas as pd
 
 from config import casos_conocidos, umbral_materialidad, CMF_HOME
-from comun.lector_espacial import cargar_coords, filas_espaciales
+from comun.emparejar import leer_y_emparejar
+from comun.lector_espacial import cargar_coords
+from comun.secciones import asignar_secciones
 
 BASE_DIR = Path(__file__).resolve().parent
 DIR_PROC = CMF_HOME / "procesado"
@@ -97,116 +102,62 @@ SUBTOTALES = {
 def norm(s):
     return re.sub(r"\s+", "", s).lower()
 
-# Una linea que marca el inicio de una seccion (no es componente).
-RE_ENCABEZADO = re.compile(r"flujos?deefectivo|actividadesde(la)?(operaci|financ|inversi)|^notas?"
-                           r"|^(activos?|pasivos?)(notas?|m\$|mus\$)*$|^ingresos(/?p[eé]rdidas|dela)"
-                           r"|^gastos(deoperaci[oó]n)?$|expresad|milesde|m\$|us\$")
-# Linea de fecha/columnas: "Al 31 de diciembre de 2015 2014", "Notas 2023 2022"
-RE_FECHA = re.compile(r"diciembre|^al\d|^al$|^notas?")
+# Glosa de un subtotal o total sin cuenta propia ("Subtotal ajustes", "Subtotal efectivo utilizado
+# en operaciones", "Aumento (disminucion) de activo neto..." en un EFE indirecto): corta los componentes.
 RE_SUBTOTAL = re.compile(r"flujos?netos?|aumento|disminuci|saldo(inicial|final)|total")
+METODO = {"ambos": "glosa_y_valor", "valor": "valor", "glosa": "solo_glosa"}
+RE_AJENA = re.compile(r"activos?netos?atribuible")
 
 
-def ubicar_subtotal(lineas, glosa_re, x_act, x_ant):
-    """Indice de la linea del subtotal: glosa esperada y al menos una
-    columna igual (en valor absoluto) al XML."""
-    for i, (glosa, a, b, linea) in enumerate(lineas):
-        # La glosa puede venir partida en la linea anterior, salvo que esa linea
-        # sea el encabezado de seccion ("Flujos de efectivo ... financiamiento"):
-        # ahi el primer componente se tomaba como subtotal cuando era la unica
-        # linea (fondo nuevo con una sola linea de financiamiento).
-        previa = lineas[i - 1][3] if i > 0 and lineas[i - 1][1] is None else ""
-        if re.search(r"flujos?deefectivo", norm(previa)) and "neto" not in norm(previa):
-            previa = ""
-        # Sobre el texto sin espacios: hay PDFs con letras separadas
-        # ("F lu jo n e to o r ig in a d o") que en crudo no calzaban.
-        if a is None or not glosa_re.search(norm(previa + " " + linea)):
+def corrido_vecino(L, i, idx, x_tot):
+    """El subtotal impreso no es el del XML pero la linea de al lado si lo trae: montos corridos
+    una linea respecto de su glosa que el lector no pudo corregir. Un no-suma ahi es lectura."""
+    if not x_tot or abs(abs(L[i][idx] or 0) - abs(x_tot)) <= TOL:
+        return False
+    return any(0 <= k < len(L) and L[k][idx] is not None and abs(abs(L[k][idx]) - abs(x_tot)) <= TOL
+               for k in (i - 1, i + 1))
+
+
+def lineas_estado(rs):
+    """Renglones con montos de un estado (sin encabezados), en orden:
+    (glosa, actual, anterior, glosa_ext, pagina, codigo, coincide, metodo)."""
+    out = []
+    for r in rs:
+        if r["metodo"] == "encabezado" or (r["actual"] is None and r["anterior"] is None):
             continue
-        # Solo cuentan coincidencias en valores DISTINTOS de cero: con la columna
-        # anterior vacia (fondo nuevo, o linea de una sola columna) un 0 calzaba
-        # con cualquier linea que tuviera la glosa, y se tomaba la linea equivocada.
-        # Con tolerancia de redondeo: hay AGF cuyo XML difiere en 1-2 del PDF
-        # (diferencias de redondeo de +-1); con igualdad exacta no se ubicaban.
-        ok_a = bool(x_act) and abs(abs(a) - abs(x_act)) <= TOL
-        ok_b = bool(x_ant) and isinstance(b, int) and abs(abs(b) - abs(x_ant)) <= TOL
-        if ok_a or ok_b:
-            return i
-    return None
+        out.append((r["glosa"], r["actual"] if r["actual"] is not None else 0, r["anterior"],
+                    (r["previa"] + " " + r["glosa"]).strip(), r["pagina"], r["codigo"], r["coincide"],
+                    r["metodo"]))
+    return out
 
 
-RE_FLUJO_NETO = re.compile(r"flujos?netos?")
-
-
-def ubicar_por_valor(lineas, x_act, x_ant, excluir=()):
-    """Respaldo cuando la glosa esperada no aparece: linea con glosa de "flujo
-    neto" (cualquier seccion) y AMBAS columnas iguales al XML (una sola si el
-    XML no trae anterior). Mas estricto porque la glosa no confirma: plantilla
-    una plantilla rotula el subtotal de financiamiento como "...de la operacion"."""
-    for i, (glosa, a, b, linea) in enumerate(lineas):
-        if a is None or i in excluir or not RE_FLUJO_NETO.search(norm(linea)):
-            continue
-        ok_a = bool(x_act) and abs(abs(a) - abs(x_act)) <= TOL
-        ok_b = (not x_ant) or (isinstance(b, int) and abs(abs(b) - abs(x_ant)) <= TOL)
-        if ok_a and ok_b:
-            return i
-    return None
-
-
-def componentes(lineas, i_sub, cortes=frozenset(), valores=frozenset()):
-    """Lineas con montos sobre el subtotal, hasta un encabezado de seccion u
-    otro subtotal. Las lineas sin montos (glosa partida en dos lineas) se saltan.
-    cortes: valores absolutos de los OTROS subtotales del XML; una linea con
-    uno de esos valores es el subtotal de la seccion anterior aunque su glosa
-    no se reconozca (glosa en la linea previa, "OPERACION", texto pegado).
-    valores: valores absolutos del XML (para reconocer encabezados con numeros)."""
-    propios = {abs(v) for v in lineas[i_sub][1:3] if isinstance(v, int)}
-    j = i_sub - 1
-    # Las lineas sin montos justo encima del subtotal son su propia glosa
-    # partida ("Flujo neto ... actividades de" / "financiamiento" / valores).
-    while j >= 0 and lineas[j][1] is None:
-        j -= 1
+def componentes(lin, i_sub, cortes, fechas=frozenset(), partes=frozenset()):
+    """Lineas con montos sobre el subtotal, dentro del estado, hasta el renglon de otro
+    subtotal o identidad (cortes: sus codigos) o una linea "subtotal/total" sin cuenta propia.
+    Esa linea se salta si esta justo encima y repite los montos del subtotal (o va en 0).
+    fechas: anios del documento y dias de cierre; una linea sin cuenta cuyos montos son solo eso es
+    un encabezado de fecha que el lector no marco ("31 | 2015", "2012") y no se suma."""
+    propios = {abs(v) for v in lin[i_sub][1:3] if v}
     comp = []
-    for j in range(j, -1, -1):
-        glosa, a, b, linea = lineas[j]
-        if a is None:
-            # Un encabezado corta el bloque: "Al 31 de diciembre de 2015". Un
-            # subtotal vacio sin montos ("Flujo neto ... operacion (+)") no.
-            n = norm(linea)
-            if (RE_ENCABEZADO.search(n) or RE_FECHA.search(n)) and not RE_SUBTOTAL.search(n):
-                break
+    for j in range(i_sub - 1, -1, -1):
+        glosa, a, b, _, _, cod, _, _ = lin[j]
+        if cod in cortes:
+            break
+        # el activo neto atribuible no es parte de ningun subtotal del ESF/ERI/EFE: es una linea del
+        # ECP (o del ESF) que quedo dentro del estado (pagina compartida sin titulo)
+        if RE_AJENA.search(norm(glosa)):
+            break
+        # una linea "total/subtotal/flujo neto" que no es parte de este subtotal corta, aunque el
+        # emparejador le haya dado otra cuenta ("Total activos" sobre el bloque del pasivo)
+        if cod not in partes and RE_SUBTOTAL.search(norm(glosa)):
+            nums = {abs(v) for v in (a, b) if v}
+            if not comp and nums <= propios:
+                continue
+            break
+        vals = {abs(v) for v in (a, b) if v}
+        if not cod and vals and vals <= fechas:
             continue
-        g = norm(glosa)
-        nums = [v for v in (a, b) if isinstance(v, int)]
-        chicos = all(abs(v) <= 2100 for v in nums)
-        # Subtotal repetido o vacio inmediatamente sobre el subtotal ("Subtotal
-        # efectivo utilizado en operaciones" con el mismo valor, "Flujo neto ... - -"):
-        # se salta en vez de cortar.
-        if RE_SUBTOTAL.search(g) and not comp and \
-                (not any(nums) or {abs(v) for v in nums if v} <= propios):
-            continue
-        # Encabezado con numeros: corta si los numeros son "chicos" (anio, dia,
-        # nota) o si ninguno es cifra del XML ("Flujos de efectivo ... 12 201",
-        # "Al 2014").
-        if (RE_ENCABEZADO.search(g) or RE_FECHA.search(g)) and \
-                (chicos or not any(abs(v) in valores for v in nums if v)):
-            break
-                # Linea de encabezado de columnas: los montos son anios ("2018 2017", "M$ 2018 2017"),
-        # tenga o no glosa. Antes solo cortaba sin glosa, y en el ESF/ERI se sumaba como partida.
-        anios = [abs(v) for v in nums if v]
-        if anios and all(1990 <= v <= 2100 for v in anios) and \
-                ((len(anios) == 2 and anios[0] - anios[1] == 1) or not g):
-            break
-        # Sin glosa: solo corta si los valores son anios ("2011 2010"). Con
-        # "numeros chicos" a secas cortaba fondos diminutos (montos de 1-4
-        # digitos con la glosa en la linea anterior).
-        if not g and any(nums) and all(1990 <= abs(v) <= 2100 for v in nums if v):
-            break
-        # Subtotal anterior: por glosa (incluida la linea previa sin montos,
-        # si la glosa vino partida) o por valor de otro subtotal del XML.
-        previa = lineas[j - 1][3] if j > 0 and lineas[j - 1][1] is None else ""
-        if RE_SUBTOTAL.search(g) or RE_SUBTOTAL.search(norm(previa) + g) \
-                or (any(nums) and all(abs(v) in cortes for v in nums if v)):
-            break
-        comp.append((glosa, a, b))
+        comp.append((glosa, a, b, lin[j][7]))
     return list(reversed(comp))
 
 
@@ -243,59 +194,36 @@ LINEAS_EFE = {
 }
 
 
-def analizar_fondo(paginas, xml, coords):
-    """paginas: paginas de estados; xml: dict (contexto, codigo) -> valor;
-    coords: cache del 03a. La lectura del PDF no usa el XML; el XML solo se
-    usa para ubicar el subtotal y para comparar."""
-    valores = {abs(v) for v in xml.values() if v}
-    lineas, irregulares = [], []
-    # Pagina "espaciada": mas de la mitad de las palabras son de 1 caracter (plantilla con
-    # letras y digitos sueltos, a veces en capas superpuestas). Ahi un no-suma es lectura.
-    espaciadas = set()
-    ocr = {p for p in paginas if coords["paginas"].get(str(p), {}).get("origen") == "ocr"}
-    for p in paginas:
-        pal = coords["paginas"].get(str(p), {}).get("palabras", [])
-        if pal and sum(len(w[0]) == 1 for w in pal) / len(pal) > 0.5:
-            espaciadas.add(p)
-    for p in paginas:
-        if str(p) in coords["paginas"]:
-            filas_p, irr = filas_espaciales(coords["paginas"][str(p)])
-            lineas += [(g, a, b, l, p) for g, a, b, l in filas_p]
-            irregulares += irr
-    planas = [(g, a, b, l) for g, a, b, l, _ in lineas]
+# Codigos que cortan los componentes, por estado: los subtotales del estado y, en el EFE, las
+# lineas de las identidades. La diferencia de cambio sobre efectivo es parte del ERI (ingresos)
+# y linea de identidad del EFE: con un solo conjunto cortaba los ingresos de la ERI.
+CORTES = {est: {cfg["codigo"] for cfg in SUBTOTALES.values() if cfg["estado"] == est} for est in ("ESF", "ERI", "EFE")}
+CORTES["EFE"] |= {cfg["codigo"] for cfg in IDENTIDADES_EFE.values()} | {v[0] for v in LINEAS_EFE.values()}
 
-    filas = []
-    usados = set()          # lineas ya tomadas como subtotal (no reutilizar)
-    ubic = {}               # subtotal -> indice de su linea (para las identidades del EFE)
+
+def analizar_fondo(renglones, xml, espaciadas, ocr, anio=None):
+    """renglones: {estado: renglones del lector ya emparejados}; xml: (contexto, codigo) -> valor.
+    espaciadas / ocr: paginas con letras sueltas / leidas por OCR (ahi un no-suma es lectura)."""
+    lin = {est: lineas_estado(rs) for est, rs in renglones.items()}
+    irregulares = []
+    filas, ubic = [], {}
     for nombre, cfg in SUBTOTALES.items():
         x_act = xml.get(("PeriodoActual", cfg["codigo"]))
         x_ant = xml.get(("PeriodoAnterior", cfg["codigo"]))
         if x_act is None:
             continue
-        i = ubicar_subtotal(planas, cfg["glosa"], x_act, x_ant)
-        glosa_ok = i is not None
-        metodo = "glosa_y_valor" if i is not None else None
-        if i is None:
-            i = ubicar_por_valor(planas, x_act, x_ant, excluir=usados)
-            if i is not None:
-                metodo = "valor"
-        if i is None:
-            # Respaldo 2: la glosa calza en UNA sola linea con montos, aunque el valor
-            # difiera del XML (subtotal mal impreso en el PDF: no debe quedar fuera).
-            cand = [k for k, (_, a, _, l) in enumerate(planas)
-                    if a is not None and k not in usados and cfg["glosa"].search(norm(l))]
-            if len(cand) == 1:
-                i, glosa_ok, metodo = cand[0], True, "solo_glosa"
+        L = lin.get(cfg["estado"], [])
+        i = next((k for k, l in enumerate(L) if l[5] == cfg["codigo"]), None)
         if i is None:
             filas.append(dict(subtotal=nombre, ubicado=False))
             continue
-        usados.add(i)
         ubic[nombre] = i
-        _, s_act, s_ant, _ = planas[i]
-        cortes = {abs(xml.get((c, otro["codigo"])) or 0) for otro in SUBTOTALES.values()
-            if otro is not cfg and otro["estado"] == cfg["estado"]
-            for c in ("PeriodoActual", "PeriodoAnterior")} - {0}
-        comp = componentes(planas, i, cortes, valores)
+        metodo = METODO[L[i][6]]
+        _, s_act, s_ant, _, pag, _, _, met = L[i]
+        fechas = ({anio, anio - 1, anio + 1, 28, 29, 30, 31} if anio else set())
+        comp = componentes(L, i, CORTES[cfg["estado"]] - {cfg["codigo"]}, fechas, set(cfg["partes"]))
+        # montos corridos que el lector corrigio en el bloque: un no-suma ahi es lectura
+        corregido = met.startswith("corrido") or any(c[3].startswith("corrido") for c in comp)
         for col, x_tot, s_pdf, idx in (("actual", x_act, s_act, 1), ("anterior", x_ant, s_ant, 2)):
             if x_tot is None or s_pdf is None:
                 continue
@@ -325,11 +253,12 @@ def analizar_fondo(paginas, xml, coords):
                     return "#"          # mismo largo que una cifra XML faltante, 1 digito distinto o 2 contiguos permutados
                 return "~" if abs(v) in otra_col else "?"
             filas.append(dict(
-                pagina_ocr=lineas[i][4] in ocr,
-                subtotal=nombre, ubicado=True, columna=col, pagina=lineas[i][4],
-                pagina_espaciada=lineas[i][4] in espaciadas,
-                glosa_esperada=glosa_ok,   # False: ubicado por valor, rotulo distinto
-                formato_irregular=" ".join(irregulares), metodo = metodo,
+                pagina_ocr=pag in ocr,
+                subtotal=nombre, ubicado=True, columna=col, pagina=pag,
+                pagina_espaciada=pag in espaciadas,
+                corrido_vecino=corregido or corrido_vecino(L, i, idx, x_tot),
+                glosa_esperada=metodo != "valor",   # False: ubicado por valor, rotulo distinto
+                formato_irregular=" ".join(irregulares), metodo=metodo,
                 subtotal_pdf=s_pdf, subtotal_xml=x_tot, suma_lineas_pdf=suma,
                 pdf_suma=abs(suma - s_pdf) <= TOL,
                 pdf_suma_signo_xml=abs(suma_sx - s_sx) <= TOL,
@@ -338,95 +267,53 @@ def analizar_fondo(paginas, xml, coords):
                 faltan_xml=len(faltan), sobran_pdf=len(sobran),
                 agregacion="; ".join(buscar_agregacion(faltan, sobran)),
                 detalle=" | ".join(f"{c[0][:30]}={c[idx]}{marca(c[idx])}" for c in comp if c[idx] is not None)))
-    filas += identidades_efe(planas, lineas, xml, ubic, usados, espaciadas, ocr, irregulares)
+    filas += identidades_efe(lin.get("EFE", []), xml, ubic, espaciadas, ocr)
     return filas
 
 
-def identidades_efe(planas, lineas, xml, ubic, usados, espaciadas, ocr, irregulares):
+def identidades_efe(L, xml, ubic, espaciadas, ocr):
     """Filas de estructura_efe para IDENTIDADES_EFE, con el mismo esquema que un subtotal:
-    subtotal_pdf = total impreso, suma_lineas_pdf = suma de sus partes impresas. Busca despues
-    del primer flujo ubicado (el ESF y el ERI no entran). Sin el EFE ubicado, no hay filas."""
+    subtotal_pdf = total impreso, suma_lineas_pdf = suma de sus partes impresas. Cada parte es el
+    renglon de su codigo (el emparejador ya resolvio glosas partidas, montos corridos y "una linea,
+    una cuenta", que en la version anterior eran los parches v4-v7). Sin el EFE ubicado, no hay filas."""
     if "operacion" not in ubic and "financiamiento" not in ubic:
         return []
-    desde = min(ubic[k] for k in ("operacion", "financiamiento") if k in ubic)
-    filas = []
-
-    # v7: una linea del PDF no puede ser dos partes (con montos corridos una linea, la diferencia
-    # de cambio tomaba la misma linea que el aumento neto)
-    ocupadas = lambda: {v[0] for v in pos.values()}
-
-    def ubicar(glosa_re, codigo):
-        x_act, x_ant = xml.get(("PeriodoActual", codigo)), xml.get(("PeriodoAnterior", codigo))
-        if x_act is None:
-            return None
-        # v6: la diferencia de cambio se busca aunque el XML diga 0 (hay PDF que la imprimen: la v5
-        # la fijaba en 0 y la identidad del PDF dejaba de cuadrar), pero por glosa nunca en una linea
-        # de aumento neto o de saldo ("aumento neto ... antes del efecto de las diferencias de cambio")
-        ajenas = ([IDENTIDADES_EFE["aumento_neto"]["glosa"], re.compile(r"saldo(inicial|final)", re.I)]
-                  if codigo == LINEAS_EFE["dif_cambio"][0] else [])
-        propia = lambda l: not any(r.search(norm(l)) for r in ajenas)
-        resto = planas[desde:]
-        i = ubicar_subtotal(resto, glosa_re, x_act, x_ant)
-        if i is not None and i + desde in ocupadas():
-            i = None
-        metodo = "glosa_y_valor"
-        if i is None:
-            # v4: glosa partida en dos lineas ("Aumento (disminucion) neto de efectivo y" sin montos /
-            # "efectivo equivalente  (315.080)"): la linea con la glosa sale en 0 y la del monto no
-            # dice "aumento". Se busca la glosa en dos lineas seguidas y el valor en la segunda.
-            for k in range(len(resto) - 1):
-                a2, b2, l2 = resto[k + 1][1], resto[k + 1][2], resto[k][3] + " " + resto[k + 1][3]
-                if k + 1 + desde in usados | ocupadas() or not glosa_re.search(norm(l2)) or not propia(l2):
-                    continue
-                if ((a2 is not None and abs(abs(a2) - abs(x_act)) <= TOL)
-                        or (x_ant is not None and b2 is not None and abs(abs(b2) - abs(x_ant)) <= TOL)):
-                    i, metodo = k + 1, "glosa_partida"
-                    break
-        if i is None:
-            # solo por glosa: no una linea en 0 si el XML trae monto (era la mitad de una glosa partida)
-            cand = [k for k, (_, a, b, l) in enumerate(resto)
-                    if a is not None and (a or b or not x_act) and k + desde not in usados | ocupadas()
-                    and glosa_re.search(norm(l)) and propia(l)]
-            i, metodo = (cand[0], "solo_glosa") if len(cand) == 1 else (None, None)
-        return (i + desde, metodo) if i is not None else None
-
-    pos = {k: (v, "subtotal") for k, v in ubic.items()}
-    # v7: el aumento neto se ubica primero (se confirma con su valor); las lineas sueltas despues
-    u = ubicar(IDENTIDADES_EFE["aumento_neto"]["glosa"], IDENTIDADES_EFE["aumento_neto"]["codigo"])
-    if u:
-        pos["aumento_neto"] = u
-    for nombre, (codigo, glosa_re) in LINEAS_EFE.items():
-        u = ubicar(glosa_re, codigo)
-        if u:
-            pos[nombre] = u
+    pos = {k: v for k, v in ubic.items() if SUBTOTALES[k]["estado"] == "EFE"}
+    de_codigo = {l[5]: k for k, l in enumerate(L) if l[5]}
+    for nombre, (codigo, _) in LINEAS_EFE.items():
+        if codigo in de_codigo:
+            pos[nombre] = de_codigo[codigo]
     for nombre, cfg in IDENTIDADES_EFE.items():
-        u = pos.get(nombre) or ubicar(cfg["glosa"], cfg["codigo"])
-        if not u:
+        if cfg["codigo"] in de_codigo:
+            pos[nombre] = de_codigo[cfg["codigo"]]
+    codigo_de = {**{k: v["codigo"] for k, v in SUBTOTALES.items()},
+                 **{k: v[0] for k, v in LINEAS_EFE.items()},
+                 **{k: v["codigo"] for k, v in IDENTIDADES_EFE.items()}}
+    filas = []
+    for nombre, cfg in IDENTIDADES_EFE.items():
+        if nombre not in pos or xml.get(("PeriodoActual", cfg["codigo"])) is None:
             filas.append(dict(subtotal=nombre, ubicado=False))
             continue
-        i, metodo = u
-        pos[nombre] = u
-        codigo_de = {**{k: v["codigo"] for k, v in SUBTOTALES.items()},
-                     **{k: v[0] for k, v in LINEAS_EFE.items()},
-                     **{k: v["codigo"] for k, v in IDENTIDADES_EFE.items()}}
+        i = pos[nombre]
+        metodo, pag = METODO[L[i][6]], L[i][4]
         for col, idx, ctx in (("actual", 1, "PeriodoActual"), ("anterior", 2, "PeriodoAnterior")):
-            x_tot, s_pdf = xml.get((ctx, cfg["codigo"])), planas[i][idx]
+            x_tot, s_pdf = xml.get((ctx, cfg["codigo"])), L[i][idx]
             if x_tot is None or s_pdf is None:
                 continue
             vals, det, falta = [], [], False
             for p in cfg["partes"]:
                 x_crudo = xml.get((ctx, codigo_de[p]))
                 x_p = x_crudo or 0
-                if p in pos and planas[pos[p][0]][idx] is not None:
-                    v = planas[pos[p][0]][idx]
+                if p in pos and L[pos[p]][idx] is not None:
+                    v = L[pos[p]][idx]
                 elif not x_p and (p == "dif_cambio" or x_crudo is not None):
-                    # v5: en cero en el XML (p.ej. saldo inicial de un fondo nuevo) -> 0; si el XML no
+                    # en cero en el XML (p.ej. saldo inicial de un fondo nuevo) -> 0; si el XML no
                     # trae la cuenta, solo la diferencia de cambio puede faltar
-                    v = 0                       # diferencia de cambio en cero y sin linea: no se imprime
-                # v3: las demas partes son obligatorias aunque el XML no las traiga (plantilla sin
-                # "aumento neto": no se evalua el saldo final en vez de sumarla como 0)
+                    v = 0
                 else:
-                    falta = True                # parte con valor que no se ubico: no se puede sumar
+                    # las demas partes son obligatorias aunque el XML no las traiga (plantilla sin
+                    # "aumento neto": no se evalua el saldo final en vez de sumarla como 0)
+                    falta = True
                     continue
                 vals.append((p, v, x_p))
                 det.append(f"{p}={v}" + ("" if not v or abs(abs(v) - abs(x_p)) <= TOL else "?"))
@@ -438,9 +325,9 @@ def identidades_efe(planas, lineas, xml, ubic, usados, espaciadas, ocr, irregula
             nz_pdf = [abs(v) for _, v, _ in vals if v]
             nz_xml = [abs(x) for _, _, x in vals if x]
             filas.append(dict(
-                pagina_ocr=lineas[i][4] in ocr, subtotal=nombre, ubicado=True, columna=col,
-                pagina=lineas[i][4], pagina_espaciada=lineas[i][4] in espaciadas,
-                glosa_esperada=metodo != "valor", formato_irregular=" ".join(irregulares), metodo=metodo,
+                pagina_ocr=pag in ocr, subtotal=nombre, ubicado=True, columna=col,
+                pagina=pag, pagina_espaciada=pag in espaciadas, corrido_vecino=corrido_vecino(L, i, idx, x_tot),
+                glosa_esperada=metodo != "valor", formato_irregular="", metodo=metodo,
                 subtotal_pdf=s_pdf, subtotal_xml=x_tot, suma_lineas_pdf=suma,
                 pdf_suma=abs(suma - s_pdf) <= TOL, pdf_suma_signo_xml=abs(sx - s_sx) <= TOL,
                 igual_xml=abs(abs(s_pdf) - abs(x_tot)) <= TOL,
@@ -541,6 +428,14 @@ def clasificar(df):
         baja = c["pagina_espaciada"].fillna(False).astype(bool) & c["clase"].str.startswith("probable_error")
         c.loc[baja, "clase_detalle"] = c.loc[baja, "clase"]       # se conserva la clase original
         c.loc[baja, "clase"] = "probable_lectura"
+    # diferencia imposible (digitos de OCR pegados en una cifra): lectura
+    absurda = c["dif"].abs() > 1e13
+    c.loc[absurda, "clase_detalle"] = c.loc[absurda, "clase"]
+    c.loc[absurda, "clase"] = "probable_lectura"
+    if "corrido_vecino" in c:
+        baja = c["corrido_vecino"].fillna(False).astype(bool) & c["clase"].str.startswith("probable_error")
+        c.loc[baja, "clase_detalle"] = c.loc[baja, "clase"] + "/corrido_vecino"
+        c.loc[baja, "clase"] = "probable_lectura"
     if "pagina_ocr" in c:
         baja = c["pagina_ocr"].fillna(False).astype(bool)
         c.loc[baja, "clase_detalle"] = c.loc[baja, "clase"]
@@ -554,15 +449,15 @@ def main():
     res = pd.read_csv(DIR_PROC / "cruce_resumen.csv", dtype={"rut": str})
     enc = pd.read_csv(DIR_PROC / "encabezados.csv", dtype={"rut": str})
     enc = enc[enc["es_ultimo_envio"]][["rut", "anio", "archivo", "moneda"]]
-    ok = res[res["estado"].isin(["ok", "sin_texto"])].drop(columns=["moneda"], errors="ignore").merge(enc, on=["rut", "anio"])
+    # mismo universo que el lector: tambien los que el 03 no ubico por cifras (se leen por titulo)
+    ok = (res[res["estado"].isin(["ok", "sin_texto", "sin_paginas_de_estados"]) & res["pdf"].notna()]
+          .drop(columns=["moneda"], errors="ignore").merge(enc, on=["rut", "anio"]))
 
-    codigos = {cfg["codigo"] for cfg in SUBTOTALES.values()} | {c for cfg in SUBTOTALES.values() for c in cfg["partes"]}
-    codigos |= {cfg["codigo"] for cfg in IDENTIDADES_EFE.values()} | {v[0] for v in LINEAS_EFE.values()}
+    # Todas las cuentas del archivo: el emparejador necesita el estado completo, no solo los subtotales
     cta = pd.read_csv(DIR_PROC / "cuentas.csv",
                       usecols=["archivo", "contexto", "codigo", "serie", "valor"], dtype={"serie": str})
-    cta = cta[cta["serie"].isna() & cta["codigo"].isin(codigos) & cta["archivo"].isin(ok["archivo"])]
-    xml_por_archivo = {a: {(c, k): v for c, k, v in zip(g["contexto"], g["codigo"], g["valor"].fillna(0))}
-                       for a, g in cta.groupby("archivo")}
+    cta = cta[cta["archivo"].isin(ok["archivo"]) & cta["codigo"].notna() & cta["valor"].notna()]
+    cta_de = dict(tuple(cta.groupby("archivo", sort=False)))
 
     filas, sin_coords = [], 0
     for r in ok.itertuples(index=False):
@@ -570,9 +465,25 @@ def main():
         if coords is None:
             sin_coords += 1         # sin cache del 03a (o PDF con error)
             continue
-        paginas = [int(p) for p in str(r.paginas_estados).split(",") if p.strip().isdigit()]
-        paginas = sorted(set(paginas) | {int(p) for p, v in coords["paginas"].items() if v.get("origen") == "ocr"})
-        for f in analizar_fondo(paginas, xml_por_archivo.get(r.archivo, {}), coords):
+        c = cta_de.get(r.archivo)
+        if c is None:
+            continue
+        c = c.copy()
+        c["estado_fin"] = asignar_secciones(c["codigo"].tolist())     # orden del XML
+        renglones, paginas = leer_y_emparejar(coords, r.paginas_estados, c)
+        sx = c[c["serie"].isna()]
+        xml = {(ctx, k): v for ctx, k, v in zip(sx["contexto"], sx["codigo"], sx["valor"])}
+        # Pagina "espaciada": mas de la mitad de las palabras son de 1 caracter (letras y digitos
+        # sueltos, a veces en capas superpuestas). Ahi un no-suma es lectura.
+        espaciadas, ocr = set(), set()
+        for p in paginas:
+            pg = coords["paginas"].get(str(p), {})
+            pal = pg.get("palabras", [])
+            if pal and sum(len(w[0]) == 1 for w in pal) / len(pal) > 0.5:
+                espaciadas.add(p)
+            if pg.get("origen") == "ocr":
+                ocr.add(p)
+        for f in analizar_fondo(renglones, xml, espaciadas, ocr, int(r.anio)):
             filas.append({"rut": r.rut, "anio": r.anio, "nombre_agf": r.nombre_agf, "moneda": r.moneda, **f})
 
     df = pd.DataFrame(filas)

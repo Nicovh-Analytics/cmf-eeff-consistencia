@@ -50,6 +50,13 @@ ANCLAS = {
 # Linea de encabezado leida como montos: "Notas 2022 2021", "Al 31 de diciembre de", "Pagina 3".
 RE_ENCABEZADO = re.compile(r"diciembre|ejercicios?terminad|anosterminad|notas?$|^notas?|pagina|^pag$|^n(o|ro)?$|^(m|ms|mm|m\$)+$"
                            r"|notasadjuntas")
+# Encabezado de seccion (con un anio en la linea se lee como monto): "ACTIVOS 2019",
+# "INGRESOS/(PERDIDAS) DE LA OPERACION 2018", "Flujos de efectivo originados por actividades de...".
+RE_SECCION = re.compile(r"^(activos?|pasivos?)(notas?|ms|mus|m)*$|^(ingresos|perdidas)+(netos?)?(dela)?(operacion)?$"
+                        r"|^gastos(deoperacion)?$|^flujos?deefectivo|actividadesde(la)?(operacion|financ|inversi)\w*$"
+                        r"|expresad|milesde|^notas?")
+RE_NO_CUENTA = re.compile(r"periodocomprendido|porelperiodo|desdeel(\d+)?de|expresad|milesde(pesos|dolares|us)")
+RE_FECHA_GLOSA = re.compile(r"\d{1,2}\s*[./-]\s*\d{1,2}\s*[./-]\s*(19|20)\d\d")
 # Cola de una glosa partida: "Saldo final de efectivo y efectivo" / "equivalente  196.824"
 # (vacia o solo signos "(+)", "(+ o -)": la linea de los montos de una glosa de arriba)
 RE_COLA = re.compile(r"^(y)?(efectivo)?equivalentes?(alfinal|alinicio)?$|^participes$|^decuotas$|^o?$")
@@ -92,9 +99,26 @@ def es_encabezado(glosa, act, ant):
     n = norm(glosa)
     if not n:
         return anios                                   # "2019  2018" sin glosa
-    if anios and titulo(glosa):
-        return True                                    # "ESTADOS DE FLUJOS DE EFECTIVO  2023  2022"
-    return bool(RE_ENCABEZADO.search(n)) and (anios or chicos)
+    # Texto que nunca es una cuenta, sea cual sea el numero que lleve al lado: periodo del estado
+    # ("Por el periodo comprendido entre...", "Desde el 2 de septiembre al..."), unidad ("Expresado
+    # en miles de pesos"), datos de contacto del auditor ("+56 ...", "contacto@..."), y una linea
+    # con el titulo de un estado y un numero chico (entrada de indice: "Estados de Flujos ... 7").
+    if (RE_NO_CUENTA.search(n) or "@" in glosa or "www." in glosa.lower() or re.match(r"\s*\+\d", glosa)
+            or (chicos and titulo(glosa))):
+        return True
+    if len(vals) == 2 and anios and vals[0] - vals[1] == 1:
+        return True                                    # "INGRESOS/(PERDIDAS) DE LA OPERACION  2024  2023"
+    # "N° 03.06.2024": la fecha de la columna leida como monto (1.012.025), cualquiera sea el valor
+    if RE_FECHA_GLOSA.search(glosa) and re.fullmatch(r"(n|no|nro|notas?|al|de|del)*",
+                                                      re.sub(r"\d", "", n)):
+        return True
+    # fecha en la glosa ("N° 31.12.2018", "De 01-01-2019") o "MUS$ MUS$" con un anio como monto
+    if anios and (RE_FECHA_GLOSA.search(glosa) or re.fullmatch(r"(n|no|nro|notas?)?(m|ms|mus|us|mm)*", n)):
+        return True
+    if anios and (titulo(glosa) or RE_SECCION.search(n)):
+        return True                                    # "ESTADOS DE FLUJOS DE EFECTIVO  2023  2022", "ACTIVOS  2019"
+    fecha = all(v <= 31 or 1990 <= v <= 2035 for v in vals)          # "Al 31 de diciembre de 2015": 31 | 2015
+    return bool(RE_ENCABEZADO.search(n)) and (anios or chicos or fecha)
 
 
 def contar_anclas(filas):
@@ -179,7 +203,9 @@ def leer_estados(coords, paginas, base=None):
         previas = []
         for (glosa, act, ant, _), sin_cifras in zip(filas, encab):
             sin_monto = act is None and ant is None
-            if sin_cifras and not indice:
+            # un titulo con montos que no son anios es una entrada de indice: no cambia el estado
+            solo_anios = all(1990 <= abs(v) <= 2035 for v in (act, ant) if v)
+            if sin_cifras and not indice and (sin_monto or solo_anios):
                 t = titulo(glosa)
                 if t:
                     # Titulo de otro estado sobre una pagina cuyo contenido es inequivoco
