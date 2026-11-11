@@ -141,6 +141,15 @@ def estado_por_anclas(filas):
 
 
 MAX_FILAS_TITULO = 10    # en una pagina agregada, el titulo tiene que estar arriba (no en un parrafo)
+# Nota de transicion a NIIF (2011): concilia el ERI o el ESF bajo PCGA con el NIIF, con las
+# mismas lineas y montos de un estado ("Saldos segun PCGA | Efecto de la transicion | Saldos
+# segun NIIF"). El 03 la toma por contenido y el lector la leia como ERI (revision 03c: 8773 2011,
+# utilidad tomada de la nota). Una pagina con esto arriba no es un estado.
+RE_TRANSICION = re.compile(r"transicion\w{0,6}niif|segunpcga|efectodelatransicion")
+
+
+def es_transicion(filas):
+    return any(RE_TRANSICION.search(norm(g)) for g, *_ in filas[:MAX_FILAS_TITULO + 5])
 
 
 def paginas_lector(paginas_estados, n_paginas=None):
@@ -194,6 +203,8 @@ def leer_estados(coords, paginas, base=None):
         por_contenido = anclas_fuertes(filas, cuenta=cuenta)
         rotulo = None                         # titulo impreso cuando el contenido es de otro estado
         indice = len(titulos) >= 3            # indice o informe del auditor: nombra 3+ estados
+        if es_transicion(filas):              # nota de transicion a NIIF: no cambia el estado vigente
+            continue
         if base is not None and p not in base and (indice or not (any(
                 e and titulo(g) for (g, *_), e in list(zip(filas, encab))[:MAX_FILAS_TITULO])
                 or por_contenido)):

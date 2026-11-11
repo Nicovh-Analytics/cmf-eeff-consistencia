@@ -12,9 +12,11 @@ Identidades (por columna actual/anterior):
   efectivo_esf_efe       ESF vs EFE: efectivo y efectivo equivalente = saldo final del EFE
 
 Los totales se toman del 03b (estructura_efe.csv: misma ubicacion, mismas
-clases). Solo se ubican las lineas nuevas, en la pagina del estado (o la
-siguiente), con la misma regla del 03b: glosa + al menos una columna igual al
-XML; si no, glosa en UNA sola linea ("solo_glosa").
+clases). Las lineas nuevas son los renglones del lector unificado emparejados
+con su codigo (comun.emparejar.leer_y_emparejar, como el 03b y la ficha):
+metodo glosa_y_valor / solo_glosa (el valor impreso difiere del XML) / valor
+(rotulo distinto). Antes cada linea tenia su regex, su lectura por pagina y
+respaldos por posicion y por fila vecina; ahora eso lo resuelve el lector.
 
 El XML es el tercer punto, como en el 03b:
   probable_error_pdf    el PDF no cuadra, el XML si, y UN solo termino del PDF difiere del XML
@@ -40,65 +42,48 @@ import sys
 import pandas as pd
 
 from config import CMF_HOME, casos_conocidos, umbral_materialidad
-from comun.lector_espacial import cargar_coords, filas_espaciales
+from comun.emparejar import leer_y_emparejar
+from comun.lector_espacial import cargar_coords
+from comun.secciones import asignar_secciones
 
 m03b = importlib.import_module("validaciones.estructura.03b_estructura")
 norm, TOL, SUB03B = m03b.norm, m03b.TOL, m03b.SUBTOTALES
 DIR_PROC = CMF_HOME / "procesado"
 
-# Lineas que el 03b no ubica. glosa: regex sobre texto sin espacios (norm).
-# codigos: candidatos en orden de preferencia; si ninguno existe en cuentas.csv
-# se busca por patron_codigo y se avisa cual se uso.
+# Lineas que el 03b no ubica: estado y codigo XML. codigos: candidatos en orden de preferencia; si
+# ninguno existe en cuentas.csv se busca por patron_codigo y se avisa cual se uso.
 LINEAS = {
-    "activo_neto": dict(
-        estado="ESF",
-        # "Total pasivo (excluido el activo neto atribuible...)" tambien lo contiene
-        glosa=re.compile(r"^(?!.*excluid)(total)?activos?netos?atribuible"),
-        codigos=["ActivoNetoAtribuibleALosParticipes", "ActivoNetoAtribuibleAParticipes"],
-        patron_codigo=r"^(Total)?ActivoNetoAtribuible"),
-    "utilidad_operacion": dict(
-        estado="ERI",
-        # "Total ingresos/(perdidas) netos de la operacion" tambien calza sin el (?!total)
-        glosa=re.compile(r"^(?!total)\(?(utilidad|p[eé]rdida|resultado).*operaci"),
-        codigos=["UtilidadPerdidaDeLaOperacion", "UtilidadPerdidaOperacional", "ResultadoDeLaOperacion"],
-        patron_codigo=r"^(Utilidad|Resultado).*Operacion"),
-    "efectivo": dict(
-        estado="ESF",
-        glosa=re.compile(r"^efectivoy(efectivo)?equivalentes?(al(efectivo)?)?[^a-z]*$"),   # "(+)" al final
-        codigos=["EfectivoYEfectivoEquivalente"],
-        patron_codigo=r"^EfectivoYEfectivoEquivalente$"),
-    "saldo_final": dict(
-        estado="EFE",
-        glosa=re.compile(r"saldofinal|alfinaldel(per[ií]odo|ejercicio)|efectivo.*alcierre"),
-        codigos=["SaldoFinalDeEfectivoYEfectivoEquivalente", "EfectivoYEfectivoEquivalenteAlFinalDelPeriodo"],
-        patron_codigo=r"SaldoFinal.*Efectivo|Efectivo.*AlFinal"),
-    # Para el 03d (resultado del ERI = resultado del ECP). El ECP trae una fila con la misma
-    # glosa y el mismo valor: la pagina siguiente se lee solo si en la del ERI no hay
-    # candidata, y se corta en el titulo del ECP. siguientes: la glosa suele partirse DESPUES
-    # de los montos ("...originadas por actividades de  1.234" / "la operacion antes de
-    # distribucion de beneficios"); sin mirar la linea siguiente no se distingue antes/despues.
-    "resultado_eri": dict(
-        estado="ERI", corta_ecp=True, siguientes=True,
-        glosa=re.compile(r"(aumento|disminuci).*(activos?|patrimonio)netos?.*antes(de(la)?)?distribu"),
-        # Respaldo por posicion (diag_cobertura_lineas: 146 sin glosa, 25 AGF): la glosa partida en
-        # 3+ lineas o con el texto desordenado no trae "antes de distribucion" junto al monto.
-        # El "antes" es la linea de aumento de activo (o patrimonio) neto que precede a la fila de
-        # distribucion de beneficios. Solo se acepta si calza con el XML (posicion_y_valor).
-        general=re.compile(r"(aumento|disminuci).*(activos?|patrimonio)netos?"),
-        antes_de=re.compile(r"^distribu"),
-        codigos=["AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios"],
+    "activo_neto": dict(estado="ESF", codigos=["ActivoNetoAtribuibleALosParticipes", "ActivoNetoAtribuibleAParticipes"],
+                        patron_codigo=r"^(Total)?ActivoNetoAtribuible"),
+    "utilidad_operacion": dict(estado="ERI",
+                               codigos=["UtilidadPerdidaDeLaOperacion", "UtilidadPerdidaOperacional", "ResultadoDeLaOperacion"],
+                               patron_codigo=r"^(Utilidad|Resultado).*Operacion"),
+    "efectivo": dict(estado="ESF", codigos=["EfectivoYEfectivoEquivalente"],
+                     patron_codigo=r"^EfectivoYEfectivoEquivalente$"),
+    "saldo_final": dict(estado="EFE",
+                        codigos=["SaldoFinalDeEfectivoYEfectivoEquivalente", "EfectivoYEfectivoEquivalenteAlFinalDelPeriodo"],
+                        patron_codigo=r"SaldoFinal.*Efectivo|Efectivo.*AlFinal"),
+    # Para el 03d (resultado del ERI = resultado del ECP; tramo antes -> distribucion -> despues)
+    "resultado_eri": dict(estado="ERI", codigos=[
+        "AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios"],
         patron_codigo=r"^AumentoDisminucionDeActivoNeto.*AntesDeDistribucion"),
-    # Para el 03d (tramo antes -> distribucion -> despues): misma logica, "despues de distribucion".
-    # Fondos sin distribucion a veces imprimen una sola linea: entonces no se ubica y no importa.
-    "resultado_eri_despues": dict(
-        estado="ERI", corta_ecp=True, siguientes=True,
-        glosa=re.compile(r"(aumento|disminuci).*(activos?|patrimonio)netos?.*despu[eé]s(de(la)?)?distribu"),
-        codigos=["AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios"],
+    "resultado_eri_despues": dict(estado="ERI", codigos=[
+        "AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios"],
         patron_codigo=r"^AumentoDisminucionDeActivoNeto.*DespuesDeDistribucion"),
 }
-# Pagina de cada estado = la de sus subtotales del 03b
-PAGINA_DE = {"ESF": ["total_activo", "total_pasivo"], "ERI": ["total_gastos", "total_ingresos"],
-             "EFE": ["financiamiento", "operacion"]}
+METODO = {"ambos": "glosa_y_valor", "glosa": "solo_glosa", "valor": "valor"}
+
+
+def dudosa(l, xa, xb):
+    """Linea ubicada solo por glosa con las DOS columnas distintas al XML: casi siempre es otro
+    renglon de glosa parecida (utilidad antes de impuesto no impresa -> renglon en 0) o una lectura
+    mala (digitos pegados o cortados), no un error. Un error real en una columna deja la otra
+    calzando (coincide "ambos"). Con una sola columna en el XML (primer anio) se acepta.
+    Revision migracion 03c: 58 de 68 identidades nuevas que no cuadraban venian de estas lineas."""
+    if l["coincide"] != "glosa":
+        return False
+    pares = [(p or 0, x) for p, x in ((l["actual"], xa), (l["anterior"], xb)) if x is not None]
+    return len(pares) == 2 and all(abs(abs(p) - abs(x)) > TOL for p, x in pares)
 
 # dif estricta (convencion habitual de presentacion) y laxa (signo de presentacion
 # distinto: perdida impresa sin parentesis). Solo la laxa decide si cuadra.
@@ -133,79 +118,6 @@ def resolver_codigos(todos):
     return out
 
 
-RE_TITULO_ECP = re.compile(r"estados?decambios|cambios?en(el|los)?activos?netos?")
-
-
-def lineas_pagina(coords, p, cache, corta_ecp=False):
-    """[(glosa+previas, glosa, act, ant, pagina, glosa+siguientes)] de las lineas con montos.
-    Las previas son hasta 2 lineas sin montos inmediatamente anteriores (rotulo partido en 2 o
-    3 lineas: "Utilidad (perdida) de la" / "operacion antes de" / "impuesto  (15.751)"); el
-    ultimo elemento es previas+glosa+siguientes (hasta 2 posteriores sin montos: el monto puede
-    ir en la linea del medio). corta_ecp: deja de leer en el titulo del ECP."""
-    if (p, corta_ecp) not in cache:
-        pg = coords["paginas"].get(str(p))
-        filas = filas_espaciales(pg)[0] if pg else []
-        out, previa = [], ""
-        for i, (g, a, b, _) in enumerate(filas):
-            if a is None:
-                if corta_ecp and RE_TITULO_ECP.search(norm(g)):
-                    break
-                previa = (previa.split("\x00")[-1] + "\x00" + g) if previa else g   # ultimas 2
-                continue
-            sig = []
-            for g2, a2, _, _ in filas[i + 1:i + 3]:
-                if a2 is not None:
-                    break
-                sig.append(g2)
-            out.append((norm(previa.replace("\x00", " ") + " " + g), norm(g), a, b, p,
-                        norm(" ".join([previa.replace("\x00", " "), g] + sig))))
-            # Guion suelto en la 1a linea de una glosa partida (como D-ECP3 en el ECP): "Aumento ...
-            # originadas  -" / "por actividades ... antes de distribucion  2.313.023". La fila en
-            # cero se emite igual, pero su glosa pasa como previa a la siguiente. Solo en el
-            # resultado del ERI (corta_ecp): en otras lineas una fila en cero arrastrada podria
-            # hacer calzar dos candidatas.
-            previa = g if (corta_ecp and not a and not b) else ""
-        cache[(p, corta_ecp)] = out
-    return cache[(p, corta_ecp)]
-
-
-RE_ROTULO = re.compile(r"(total|utilidad|flujo|saldo|distribu|aumento|disminu|activo|pasivo|efectivo|impuesto"
-                       r"|resultado|ingreso|gasto|comisi|cambio|diferencia|interes|otros?|patrimonio)")
-
-
-def ubicar(lineas, rx, x_act, x_ant, siguientes=False):
-    cand = [l for l in lineas if rx.search(l[1]) or rx.search(l[0]) or (siguientes and rx.search(l[5]))]
-    calza = lambda l: ((x_act and abs(abs(l[2] or 0) - abs(x_act)) <= TOL)
-                       or (x_ant and abs(abs(l[3] or 0) - abs(x_ant)) <= TOL))
-    for l in cand:
-        if calza(l):
-            return l, "glosa_y_valor"
-    # Glosa en una fila con guiones y montos en la vecina (diag_ceros: 70 lecturas con las dos
-    # columnas en 0 y el monto del XML en la pagina). Solo se toma la vecina si calza con el XML:
-    # no agrega deteccion, pero saca esas lineas de la lectura dudosa.
-    # Solo la fila de ABAJO y solo si es continuacion (su glosa no empieza con un rotulo propio):
-    # la de arriba suele ser la utilidad, con el mismo monto, y taparia un "antes" omitido en el
-    # PDF (forma antes_vacio, que puede ser error real).
-    if len(cand) == 1 and not cand[0][2] and not cand[0][3] and (x_act or x_ant):
-        j = lineas.index(cand[0]) + 1
-        if j < len(lineas) and not RE_ROTULO.match(lineas[j][1]) and calza(lineas[j]):
-            return lineas[j], "vecina_y_valor"
-    return (cand[0], "solo_glosa") if len(cand) == 1 else (None, None)
-
-
-def ubicar_por_posicion(lineas, general, siguiente, x_act, x_ant):
-    """La linea que calza con `general` y va justo antes de una linea cuya glosa empieza con
-    `siguiente` (p.ej. el resultado antes de distribucion, antes de "Distribucion de beneficios")."""
-    cand = [x for x, y in zip(lineas, lineas[1:]) if general.search(x[0]) and siguiente.search(y[1])]
-    if len(cand) != 1:
-        return None, None
-    x = cand[0]
-    ok = (x_act and abs(abs(x[2]) - abs(x_act)) <= TOL) or (x_ant and abs(abs(x[3]) - abs(x_ant)) <= TOL)
-    # Solo con el valor del XML: sin el, la posicion sola eligio lineas equivocadas (1a corrida:
-    # +19 resultado_eri de lectura en el 03d) y como solo_glosa tampoco habria detectado errores.
-    return (x, "posicion_y_valor") if ok else (None, None)
-
-
 def es_espaciada(coords, p):
     pal = coords["paginas"].get(str(p), {}).get("palabras", [])
     return bool(pal) and sum(len(w[0]) == 1 for w in pal) / len(pal) > 0.5
@@ -237,63 +149,55 @@ def main():
     res = pd.read_csv(DIR_PROC / "cruce_resumen.csv", dtype={"rut": str})
     enc = pd.read_csv(DIR_PROC / "encabezados.csv", dtype={"rut": str})
     enc = enc[enc["es_ultimo_envio"]][["rut", "anio", "archivo", "moneda"]]
-    ok = (res[res["estado"].isin(["ok", "sin_texto"])].drop(columns=["moneda"], errors="ignore")
-          .merge(enc, on=["rut", "anio"]))
+    ok = (res[res["estado"].isin(["ok", "sin_texto", "sin_paginas_de_estados"]) & res["pdf"].notna()]
+          .drop(columns=["moneda"], errors="ignore").merge(enc, on=["rut", "anio"]))
 
     est = pd.read_csv(DIR_PROC / "estructura_efe.csv", dtype={"rut": str})
     est = est[est["ubicado"] == True]
     tot = {k: {(f.subtotal, f.columna): f for f in g.itertuples(index=False)}
            for k, g in est.groupby(["rut", "anio"])}
 
+    # Todas las cuentas del archivo: el emparejador necesita el estado completo
     cta = pd.read_csv(DIR_PROC / "cuentas.csv", usecols=["archivo", "contexto", "codigo", "serie", "valor"],
                       dtype={"serie": str})
-    cta = cta[cta["serie"].isna()]
+    cta = cta[cta["archivo"].isin(ok["archivo"]) & cta["codigo"].notna() & cta["valor"].notna()]
     print("codigos XML de las lineas nuevas:")
-    codigos = resolver_codigos(set(cta["codigo"].unique()))
-    necesarios = {c for c in codigos.values() if c} | {cfg["codigo"] for cfg in SUB03B.values()}
-    cta = cta[cta["codigo"].isin(necesarios) & cta["archivo"].isin(ok["archivo"])]
-    xml_de = {a: {(c, k): v for c, k, v in zip(g["contexto"], g["codigo"], g["valor"].fillna(0))}
-              for a, g in cta.groupby("archivo")}
+    codigos = resolver_codigos(set(cta.loc[cta["serie"].isna(), "codigo"].unique()))
+    cta_de = dict(tuple(cta.groupby("archivo", sort=False)))
 
     filas, ubic, lineas_out = [], {k: [0, 0] for k in LINEAS}, []
+    dudosas = {k: 0 for k in LINEAS}
     for r in ok.itertuples(index=False):
         t = tot.get((r.rut, r.anio))
         if not t:
             continue
         coords = cargar_coords(r.rut, r.anio, r.pdf)
-        if coords is None:
+        c = cta_de.get(r.archivo)
+        if coords is None or c is None:
             continue
-        x = xml_de.get(r.archivo, {})
-        pag = {e: next((int(f.pagina) for (s, _), f in t.items() if s in subs), None)
-               for e, subs in PAGINA_DE.items()}
-        cache, nuevas = {}, {}
+        c = c.copy()
+        c["estado_fin"] = asignar_secciones(c["codigo"].tolist())
+        renglones, _ = leer_y_emparejar(coords, r.paginas_estados, c)
+        sx = c[c["serie"].isna()]
+        x = {(ctx, k): v for ctx, k, v in zip(sx["contexto"], sx["codigo"], sx["valor"])}
+        nuevas = {}
         for k, cfg in LINEAS.items():
-            p = pag[cfg["estado"]]
-            if p is None:
+            cod, rs = codigos[k], renglones.get(cfg["estado"], [])
+            if not cod or not rs:
                 continue
             ubic[k][1] += 1
-            cod = codigos[k]
-            xa = x.get(("PeriodoActual", cod)) if cod else None
-            xb = x.get(("PeriodoAnterior", cod)) if cod else None
-            sig = cfg.get("siguientes", False)
-            if cfg.get("corta_ecp"):
-                l, metodo = ubicar(lineas_pagina(coords, p, cache, corta_ecp=True), cfg["glosa"], xa, xb, sig)
-                if l is None:
-                    l, metodo = ubicar(lineas_pagina(coords, p + 1, cache, corta_ecp=True), cfg["glosa"], xa, xb, sig)
-                if l is None and "antes_de" in cfg:
-                    for q in (p, p + 1):
-                        l, metodo = ubicar_por_posicion(lineas_pagina(coords, q, cache, corta_ecp=True),
-                                                        cfg["general"], cfg["antes_de"], xa, xb)
-                        if l is not None:
-                            break
-            else:
-                lin = lineas_pagina(coords, p, cache) + lineas_pagina(coords, p + 1, cache)
-                l, metodo = ubicar(lin, cfg["glosa"], xa, xb, sig)
+            l = next((q for q in rs if q["codigo"] == cod and q["metodo"] != "encabezado"
+                      and (q["actual"] is not None or q["anterior"] is not None)), None)
             if l is None:
                 continue
+            xa, xb, q = x.get(("PeriodoActual", cod)), x.get(("PeriodoAnterior", cod)), l["pagina"]
+            if dudosa(l, xa, xb):
+                dudosas[k] += 1
+                continue
             ubic[k][0] += 1
-            q = l[4]
-            nuevas[k] = dict(actual=l[2], anterior=l[3], xml_actual=xa, xml_anterior=xb, pagina=q, metodo=metodo,
+            nuevas[k] = dict(actual=l["actual"] if l["actual"] is not None else 0,
+                             anterior=l["anterior"] if l["anterior"] is not None else (0 if xb is not None else None),
+                             xml_actual=xa, xml_anterior=xb, pagina=q, metodo=METODO[l["coincide"]],
                              ocr=coords["paginas"].get(str(q), {}).get("origen") == "ocr",
                              esp=es_espaciada(coords, q))
 
@@ -339,7 +243,7 @@ def main():
                                 n for n, v in zip(cfg["terminos"], ts)
                                 if v["xml"] is not None and abs(abs(v["pdf"]) - abs(v["xml"])) > TOL),
                             pagina_ocr=any(v["ocr"] for v in ts), pagina_espaciada=any(v["esp"] for v in ts),
-                            paginas=",".join(sorted({str(v["pagina"]) for v in ts})),
+                            paginas=",".join(str(p) for p in sorted({int(v["pagina"]) for v in ts})),
                             pdf=" | ".join(f"{n}={v['pdf']}" for n, v in zip(cfg["terminos"], ts)),
                             xml=" | ".join(f"{n}={v['xml']}" for n, v in zip(cfg["terminos"], ts)))
                 for n, v in zip(cfg["terminos"], ts):
@@ -352,6 +256,9 @@ def main():
                 filas.append(fila)
 
     df = pd.DataFrame(filas)
+    if df.empty:
+        print("sin identidades evaluables")
+        return 0
     df.to_csv(DIR_PROC / "identidades.csv", index=False, encoding="utf-8-sig")
     pd.DataFrame(lineas_out).to_csv(DIR_PROC / "lineas_03c.csv", index=False, encoding="utf-8-sig")
     nc = df[df["clase"] != "cuadra"]
@@ -360,7 +267,7 @@ def main():
     # --- Consola ---
     print("\nlineas nuevas ubicadas (de los fondo-anio con la pagina del estado):")
     for k, (u, n) in ubic.items():
-        print(f"  {k:<20} {u:>5}/{n:<5} ({u / max(n, 1):.1%})")
+        print(f"  {k:<20} {u:>5}/{n:<5} ({u / max(n, 1):.1%})  descartadas solo por glosa: {dudosas[k]}")
     print("\npor identidad (filas = fondo-anio-columna):")
     resumen = df.groupby("identidad").agg(
         n=("clase", "size"), cuadra_pdf=("cuadra_pdf", "mean"),
