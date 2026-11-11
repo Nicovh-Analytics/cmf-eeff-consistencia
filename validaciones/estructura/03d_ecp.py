@@ -4,7 +4,11 @@
 
 El ECP tiene una columna por serie mas una de total, y cada periodo en su propio
 bloque (a veces en paginas distintas, a veces con series distintas entre anios).
-Se lee con comun/lector_multicolumna (posicion, sin XML) y se verifica:
+Paginas: las que el lector unificado (comun/lector.py) deja en estado ECP, las mismas para
+todas las etapas (paginas del 03 con huecos y margen, continuaciones sin titulo, titulo de otro
+estado sobre un ECP, sin indice ni nota de transicion NIIF). Antes: paginas del 03 + OCR con el
+titulo del ECP en el texto (perdia las paginas fuera del 03 y las continuaciones sin titulo).
+Filas: comun/lector_multicolumna (posicion, sin XML). Se verifica:
 
   dentro de cada bloque, POR COLUMNA (cada serie y el total), sin XML:
     transacciones   aportes - rescates = aumento neto por transacciones de cuotas
@@ -27,7 +31,7 @@ se emparejan con las del XML). Clases de lo que no cuadra:
   revisar_sin_xml       total sin cifras XML para comparar
   observacion_inmaterial  diferencia bajo el umbral de materialidad
 
-Lee:      cruce_resumen.csv, encabezados.csv, cuentas.csv, identidades.csv y lineas_03c.csv (03c), coords_pdf/
+Lee:      cruce_resumen.csv (ok, sin_texto y sin_paginas_de_estados), encabezados.csv, cuentas.csv, identidades.csv y lineas_03c.csv (03c), coords_pdf/
 Escribe:  data/procesado/ecp_bloques.csv     1 fila por fondo-anio-bloque (que se leyo)
           data/procesado/ecp_chequeos.csv    1 fila por chequeo
           data/procesado/ecp_no_cuadra.csv   los que no cuadran, clasificados
@@ -38,6 +42,7 @@ from collections import Counter
 
 import pandas as pd
 
+from comun.lector import leer_estados, paginas_de
 from comun.lector_espacial import cargar_coords
 from comun.lector_multicolumna import columna_total, filas_multicolumna
 from config import CMF_HOME, casos_conocidos, umbral_materialidad
@@ -85,12 +90,22 @@ XML = {  # codigos del total del fondo (sin serie)
 
 
 # --------------------------------------------------------------------------- lectura
-def leer_bloques(coords, paginas):
-    """Bloques del ECP (inicio ... cierre) de las paginas con el titulo del estado."""
+def paginas_ecp(coords, paginas_estados):
+    """Paginas que el lector unificado deja en estado ECP (con montos)."""
+    paginas, base = paginas_de(paginas_estados, coords)
+    if not paginas:
+        return []
+    _, pags = leer_estados(coords, paginas, base=base)
+    return sorted(p for p, ests in pags.items() if "ECP" in ests)
+
+
+def leer_bloques(coords, paginas, exigir_titulo=True):
+    """Bloques del ECP (inicio ... cierre). exigir_titulo: solo paginas con el titulo del estado
+    en su texto (sin el, las paginas ya vienen elegidas por el lector: paginas_ecp)."""
     bloques = []
     for p in paginas:
         pg = coords["paginas"].get(str(p))
-        if not pg or not RE_TITULO.search(norm(" ".join(w[0] for w in pg["palabras"]))):
+        if not pg or (exigir_titulo and not RE_TITULO.search(norm(" ".join(w[0] for w in pg["palabras"])))):
             continue
         renglones, franjas = filas_multicolumna(pg)
         if not franjas:
@@ -462,7 +477,8 @@ def main():
     res = pd.read_csv(DIR_PROC / "cruce_resumen.csv", dtype={"rut": str, "paginas_estados": str})
     enc = pd.read_csv(DIR_PROC / "encabezados.csv", dtype={"rut": str})
     enc = enc[enc["es_ultimo_envio"]][["rut", "anio", "archivo", "moneda"]]
-    ok = (res[res["estado"].isin(["ok", "sin_texto"])].drop(columns=["moneda"], errors="ignore")
+    ok = (res[res["estado"].isin(["ok", "sin_texto", "sin_paginas_de_estados"]) & res["pdf"].notna()]
+          .drop(columns=["moneda"], errors="ignore")
           .merge(enc, on=["rut", "anio"]))
     cta = pd.read_csv(DIR_PROC / "cuentas.csv", usecols=["archivo", "contexto", "codigo", "serie", "valor"],
                       dtype={"serie": str})
@@ -484,13 +500,12 @@ def main():
         coords = cargar_coords(r.rut, r.anio, r.pdf)
         if coords is None:
             continue
-        paginas = [int(p) for p in str(r.paginas_estados).split(",") if p.strip().isdigit()]
-        paginas = sorted(set(paginas) | {int(p) for p, v in coords["paginas"].items() if v.get("origen") == "ocr"})
+        paginas = paginas_ecp(coords, r.paginas_estados)
         x = xml_de.get(r.archivo, {})
         base = dict(rut=r.rut, anio=r.anio, nombre_agf=r.nombre_agf, moneda=r.moneda)
         umbral = umbral_materialidad(r.moneda)
         por_col = {}
-        bloques = leer_bloques(coords, paginas)
+        bloques = leer_bloques(coords, paginas, exigir_titulo=False)
         for b in bloques:
             b["total"] = indice_total(b)
             a = anio_bloque(b)
