@@ -143,7 +143,7 @@ def estado_por_anclas(filas):
 MAX_FILAS_TITULO = 10    # en una pagina agregada, el titulo tiene que estar arriba (no en un parrafo)
 # Nota de transicion a NIIF (2011): concilia el ERI o el ESF bajo PCGA con el NIIF, con las
 # mismas lineas y montos de un estado ("Saldos segun PCGA | Efecto de la transicion | Saldos
-# segun NIIF"). El 03 la toma por contenido y el lector la leia como ERI (revision 03c: 8773 2011,
+# segun NIIF"). El 03 la toma por contenido y el lector la leia como ERI (revision 03c: un fondo-anio de 2011,
 # utilidad tomada de la nota). Una pagina con esto arriba no es un estado.
 RE_TRANSICION = re.compile(r"transicion\w{0,6}niif|segunpcga|efectodelatransicion")
 

@@ -199,7 +199,7 @@ def xml_valores(s, cods):
 
 
 def nums(texto):
-    """'aportes=14457 | rescates=-4857 | neto=9600' -> {'aportes': 14457.0, ...}"""
+    """'aportes=1500 | rescates=-500 | neto=1000' -> {'aportes': 1500.0, ...}"""
     out = {}
     for t in str(texto).split("|"):
         if "=" in t:
