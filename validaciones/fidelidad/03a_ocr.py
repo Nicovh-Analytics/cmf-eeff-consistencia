@@ -12,6 +12,10 @@ Complemento del 03a para lo que pdfplumber no puede leer:
   - con --sin-texto: PDF escaneados completos (estado "sin_texto" del 03). Se hace
     OCR de las primeras MAX_PAG paginas y se guardan las que tienen el titulo de un
     estado y montos.
+  - con --ecp: PDF escaneados que ya tienen cache: OCR de las paginas ENTRE los estados ya
+    guardados que no estan en el cache (el ECP suele ir entre el ERI y el EFE y se perdia: su
+    titulo no calzaba con RE_TITULO, o la pagina del comparativo no trae titulo; o venia apaisada).
+    Se guardan las que tienen montos. Diag de cobertura 03d: 363 fondo-anio-columna escaneados sin pagina ECP.
 
 Salida: {CMF_HOME}/coords_pdf/{rut}/{anio}/{pdf}.ocr.json.gz, con el mismo formato
 del 03a y origen="ocr" por pagina. No toca el cache del 03a; lector_espacial.
@@ -19,6 +23,7 @@ cargar_coords une ambos (las paginas con texto tienen prioridad).
 
 Uso:  python run.py --solo 03o                 (paginas imagen de fondos "ok")
       PYTHONPATH=. python validaciones/fidelidad/03a_ocr.py --sin-texto
+      PYTHONPATH=. python validaciones/fidelidad/03a_ocr.py --ecp
 Si Tesseract no esta instalado, avisa y termina sin error (el pipeline sigue).
 Un cache OCR existente se completa: solo se procesan las paginas que faltan ("intentadas").
 """
@@ -41,8 +46,10 @@ DIR_COORDS = CMF_HOME / "coords_pdf"
 N_PROCESOS = max(1, (os.cpu_count() or 2) - 2)
 MAX_PAG = 15
 VERSION = 1
+ECP_VERSION = 2      # 2: con paginas apaisadas giradas (comun.ocr.ocr_orientada); se rehace el pase --ecp
+# ECP: tambien sin articulo ("cambios en activo neto") y "cambios en el patrimonio" (como el 03d)
 RE_TITULO = re.compile(r"estados?\s+de\s+(situaci[oó]n\s+financiera|resultados?\s+integral"
-                       r"|cambios?\s+en\s+(el|los)\s+activos?\s+netos?|flujos?\s+de\s+efectivo)", re.I)
+                       r"|cambios?\s+en\s+((el|los)\s+)?(activos?\s+netos?|patrimonio)|flujos?\s+de\s+efectivo)", re.I)
 RE_MONTO = re.compile(r"\(?\d{1,3}(?:\.\d{3})+\)?")
 
 
@@ -107,7 +114,11 @@ def tarea(args):
     salida["intentadas"] = sorted(set(salida.get("intentadas") or map(int, salida["paginas"])) | set(paginas))
     try:
         res = ocr_pdf(DIR_ARCHIVOS / str(rut) / str(anio) / pdf, paginas, lang=_LANG)
-        salida["paginas"].update({str(p): d for p, d in res.items() if not filtrar or es_pagina_de_estado(d)})
+        ok = ((lambda d: len(RE_MONTO.findall(" ".join(w[0] for w in d["palabras"]))) >= 5) if filtrar == "montos"
+              else es_pagina_de_estado if filtrar else (lambda d: True))
+        salida["paginas"].update({str(p): d for p, d in res.items() if ok(d)})
+        if filtrar == "montos":
+            salida["ecp_version"] = ECP_VERSION
     except Exception as e:                                   # PDF danado, etc.: queda registrado
         # al completar un cache bueno, el error no borra lo que ya estaba
         salida["error_agregar" if previo else "error"] = f"{type(e).__name__}: {e}"
@@ -127,6 +138,7 @@ def main():
         print(f"03a_ocr omitido: {e}")
         return 0
     sin_texto = "--sin-texto" in sys.argv
+    ecp = "--ecp" in sys.argv
     # str: una sola pagina ("7") se leeria como numero y se perderia
     res = pd.read_csv(DIR_PROC / "cruce_resumen.csv", dtype={"rut": str, "paginas_sin_tabla": str})
 
@@ -156,6 +168,15 @@ def main():
                     paginas = [p for p in paginas if p not in hechas]
                     if not paginas:
                         continue
+        elif ecp and r.estado == "sin_texto":
+            previo = leer_gz(cache) if cache.exists() else None
+            if previo is None or previo.get("error") or previo.get("ecp_version", 0) >= ECP_VERSION:
+                continue
+            est = sorted(int(p) for p in previo["paginas"])
+            paginas = [p for p in range(est[0], est[-1] + 1) if str(p) not in previo["paginas"]] if est else []
+            if not paginas:
+                continue
+            filtrar = "montos"
         elif sin_texto and r.estado == "sin_texto":
             if cache.exists() and cache.stat().st_mtime >= pdf.stat().st_mtime:
                 continue

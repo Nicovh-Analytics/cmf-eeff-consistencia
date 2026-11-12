@@ -75,6 +75,7 @@ FILAS = [
     ("activo_neto", re.compile(r"^.{0,4}(activos?|patrimonio)netos?atribuible")),
 ]
 MOVIMIENTOS = {"aportes", "rescates", "neto", "res_antes", "res_despues", "dist", "dist_partes"}
+RE_UNIDADES = re.compile(r"(notas?(n°|nº)?)?(m(us)?\$|us\$|\$)+")     # "Nota MUS$ MUS$ ...", sin espacios
 RE_CIERRE = re.compile(r"diciembre|31-12|31/12|cierre|final")
 RE_INICIO = re.compile(r"enero|01-01|01/01|inicio")
 RE_ANIO = re.compile(r"(?:19|20)\d\d")
@@ -122,7 +123,9 @@ def leer_bloques(coords, paginas, exigir_titulo=True):
                 r = {**r, "vals": dict(solo_montos["vals"]), "irr": set(solo_montos["irr"])}
                 solo_montos = None
             else:
-                solo_montos = r if (clave is None and r["vals"] and not g) else None
+                # tambien si la "glosa" es solo el rotulo de unidades ("MUS$ MUS$ ..."): los montos del
+                # inicio quedan a la altura de esa linea (diag de cobertura 03d: pagina sin bloque)
+                solo_montos = r if (clave is None and r["vals"] and (not g or RE_UNIDADES.fullmatch(g))) else None
             # Fila reconocida sin montos ("Activo neto ... al 31 de diciembre") seguida de una
             # sin nombre con montos ("Valor Cuota  25.506.525 ..."): los montos son de la primera.
             if clave is None and r["vals"] and pendiente:
@@ -175,7 +178,24 @@ def leer_bloques(coords, paginas, exigir_titulo=True):
             else:
                 b["filas"].setdefault(clave, dict(r["vals"]))
                 b["irr"] |= {(clave, k) for k in r["irr"]}
-    return unir_tablas_apiladas([m for b in bloques for m in partir_lado_a_lado(b)])
+    return unir_tablas_apiladas([m for b in bloques for x in partir_dos_periodos(b) for m in partir_lado_a_lado(x)])
+
+
+def partir_dos_periodos(b):
+    """Fondo sin series: el ECP es una tabla de 2 columnas, el anio y el anterior (sin columna
+    Total). Se reconoce porque el cierre de la 2a columna es el inicio de la 1a (la continuidad
+    queda dentro de la tabla). Se parte en dos bloques de una columna, el actual y el anterior.
+    Sin esto se leia como serie + total, fechado por orden como el actual, y el comparativo
+    quedaba sin bloque (diag de cobertura 03d: 25 fondo-anio, un fondo en 10 anios)."""
+    f = b["filas"]
+    ini0, cie1 = f.get("inicio", {}).get(0), f.get("cierre", {}).get(1)
+    if (b["n_cols"] != 2 or b.get("hay_total") or not ini0 or not cie1 or abs(ini0 - cie1) > TOL
+            or abs(f.get("inicio", {}).get(1, 0) - f.get("cierre", {}).get(0, 0)) <= TOL):
+        return [b]
+    return [{**b, "filas": {c: {0: v[k]} for c, v in f.items() if k in v}, "n_cols": 1, "hay_total": True,
+             "total_propio": True, "irr": {(c, 0) for c, kk in b["irr"] if kk == k},
+             "periodo": per, "dos_periodos": True}
+            for k, per in ((0, "actual"), (1, "anterior"))]
 
 
 def tramo_distribucion(F, t, ra, e, ed):
@@ -509,6 +529,9 @@ def main():
         for b in bloques:
             b["total"] = indice_total(b)
             a = anio_bloque(b)
+            if b.get("periodo"):                      # fondo sin series: la columna dice el periodo
+                a = r.anio - (b["periodo"] == "anterior")
+                b["fechado_por"] = "dos_columnas"
             # Glosa desactualizada ("al 31 de diciembre de 2013" en el ECP 2015, revision de
             # cobertura): si el cierre del Total coincide con el XML de UNA columna y el anio del
             # texto dice otra cosa, manda el XML y el anio del texto queda registrado.
@@ -517,7 +540,7 @@ def main():
             xa_, xb_ = x.get(("PeriodoActual", XML["cierre"])), x.get(("PeriodoAnterior", XML["cierre"]))
             calza = [an for xc, an in ((xa_, r.anio), (xb_, r.anio - 1))
                      if cie_ is not None and xc is not None and abs(abs(cie_) - abs(xc)) <= TOL]
-            if a is not None and len(calza) == 1 and calza[0] != a:
+            if a is not None and len(calza) == 1 and calza[0] != a and not b.get("periodo"):
                 b["anio_texto"], a = a, calza[0]
                 b["fechado_por"] = "xml_corrige_texto"
             if a is None:
@@ -541,7 +564,8 @@ def main():
                             "total": b["total"], "filas": ",".join(sorted(b["filas"])), "ocr": b["ocr"],
                             "fechado_por": b.get("fechado_por", "texto"), "anio_texto": b.get("anio_texto"),
                             "tablas_unidas": b.get("tablas_unidas", False),
-                            "lado_a_lado": b.get("lado_a_lado", False)})
+                            "lado_a_lado": b.get("lado_a_lado", False),
+                            "dos_periodos": b.get("dos_periodos", False)})
             fila_bloque = filas_b[-1]
             ctx = "PeriodoActual" if col == "actual" else "PeriodoAnterior"
             xml_t = {k: v for (c, k), v in x.items() if c == ctx}
@@ -645,7 +669,8 @@ def main():
                                           if x_ is not None and abs(abs(p_) - abs(x_)) > TOL),
                     "cuadra_xml": None if xr is None or e[1] is None else abs(abs(xr) - abs(e[1])) <= TOL}
             fila["clase"] = clasificar(fila, True, umbral)
-            forma = tramo_distribucion(b["filas"], t, ra, e, eri_d.get((r.rut, r.anio, col)))
+            # en una pagina OCR un digito mal leido imita cualquier forma del tramo: queda lectura_ocr
+            forma = None if b["ocr"] else tramo_distribucion(b["filas"], t, ra, e, eri_d.get((r.rut, r.anio, col)))
             if forma and fila["distintos"] == "resultado_ecp" and abs(d) <= umbral:
                 fila["clase"], fila["detalle"] = "observacion_inmaterial", f"tramo distribucion: {forma}"
             elif forma in ("antes_vacio", "digito_extra") and fila["distintos"] == "resultado_ecp":
@@ -707,6 +732,7 @@ def main():
           f" fondo-anio (ecp_bloques.csv: anio_texto)")
     print(f"  bloques de dos tablas apiladas (unidas): {int(bl['tablas_unidas'].sum())}")
     print(f"  bloques de dos periodos lado a lado (partidos): {int(bl['lado_a_lado'].sum())}")
+    print(f"  bloques de fondos sin series, anio y anterior en 2 columnas (partidos): {int(bl['dos_periodos'].sum())}")
     print(f"  bloques confiables (todas las filas suman al Total y el Total cuadra): {bl['confiable'].mean():.1%}")
     print(f"  bloques cuyo Total coincide con el XML en >= 50% de las filas: {(bl['coincide_xml'] >= 0.5).mean():.1%}")
     print(f"  activo neto del ESF disponible (03c): {len(esf)} fondo-anio-columna")

@@ -782,3 +782,16 @@ Cuentan solo los 6 pares de rotulo (`PARES_GLOSA` del 04c) y solo si la glosa di
 Los casos de rotulo tienen dif 0: no reciben senales sueltas de la misma celda.
 
 **Regresion 04c**: 798 -> 978 casos (+126 glosa_otra_cuenta, +54 titulo_otro_estado); errores sin cambio (370). Ningun otro conteo cambia.
+
+### D-L8. Cobertura del ECP (03d) (2026-11-12)
+
+Diagnostico por causa de cada fondo-anio-columna sin bloque del ECP (`verificacion/diag_03d_cobertura.py`): sin pagina ECP en el lector, paginas sin bloque, bloques de otro anio, o sin cierre en el XML (primer anio del fondo: el XML trae el comparativo en 0 o no lo trae; no es un hueco). Cuatro arreglos:
+
+1. **Fondos sin series** (`partir_dos_periodos`): el ECP es una tabla de 2 columnas, el anio y el anterior. Se reconoce porque el cierre de la 2a columna es el inicio de la 1a (la continuidad queda dentro de la tabla, sin XML) y se parte en dos bloques de una columna. Antes se leia como serie + total y el comparativo quedaba sin bloque (un fondo en 10 anios). 56 bloques.
+2. **Rotulo de unidades con montos**: "Nota MUS$ MUS$ ..." con los montos del inicio a su altura (una linea sobre la glosa) cuenta como linea sin texto, que el 03d ya juntaba con la glosa de abajo (un fondo-anio: pagina sin bloque).
+3. **OCR de paginas apaisadas**: en escaneados el ECP por series viene girado; Tesseract no gira solo (0 montos derecho, 28 girado 270). `comun.ocr.ocr_orientada`: si la lectura derecha trae menos de 5 montos se prueba girada 270 y 90 y se queda la que lee mas montos (no "la que suma"). `03a_ocr --ecp` pasa por OCR las paginas entre los estados ya guardados de los escaneados (el titulo del ECP sin articulo o "patrimonio" no calzaba con su filtro, y la pagina del comparativo no trae titulo). Escaneados sin pagina ECP: 363 -> 16 fondo-anio-columna.
+4. **Tramo de distribucion en paginas OCR**: no se aplica (un digito mal leido imita cualquier forma del tramo); queda `probable_lectura_ocr`.
+
+**Cobertura** (fondo-anio con bloque): actual 4.150 -> 4.331 (92,0 -> 96,0 %), anterior 3.862 -> 4.070 (85,6 -> 90,2 %). Hueco real restante: 300 en el actual y ~317 en el comparativo, repartido en plantillas sueltas (bloques de otro anio, paginas sin bloque).
+
+**Regresion**: 03b, 03c y 04b sin cambios; casos conocidos del 03d 18/18. 03d: +434 `probable_lectura_ocr` (tablas de series por OCR) y +26 `probable_error*`, todos de bloques nuevos: rotulo del aumento neto en tres fondo-anio escaneados de una AGF (exige igualdad exacta con inicio + aportes - rescates: un OCR con digitos errados no la produce) y continuidad del XML en un fondo-anio (el PDF cuadra). 04c: 978 -> 984 casos (rotulo +3, glosa desactualizada +2, error_XML +1); errores 370 -> 371.

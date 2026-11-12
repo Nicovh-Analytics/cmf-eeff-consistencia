@@ -13,6 +13,10 @@ Calibracion (EFE sinteticos con cifras conocidas, 2026-10-23):
     sumar. Por eso un no-suma en pagina OCR se clasifica como lectura, nunca
     como error del PDF (03b).
   - Binarizar empeora (98%): no se usa. psm 6 y psm 4 rinden igual.
+  - Paginas apaisadas (ECP por series en escaneados): Tesseract no gira solo. Si la lectura
+    derecha trae menos de MIN_MONTOS_GIRO montos, se prueba girada 270 y 90 grados y se queda la
+    que lee mas montos (no "la que suma"). Diag de cobertura 03d: ECP de escaneados ilegible
+    derecho, 28 montos girado 270.
 
 Requiere Tesseract instalado (en Windows: instalador UB-Mannheim, con el idioma
 spa). Ruta por variable TESSERACT_CMD o la ruta por defecto de Windows.
@@ -90,6 +94,29 @@ def ocr_mejor(doc, pagina, lang="eng"):
     return mejor
 
 
+RE_MONTO = re.compile(r"\(?\d{1,3}(?:\.\d{3})+\)?")
+MIN_MONTOS_GIRO = 5
+
+
+def n_montos(datos):
+    return len(RE_MONTO.findall(" ".join(w[0] for w in datos["palabras"])))
+
+
+def ocr_orientada(doc, pagina, lang="eng"):
+    """OCR derecho; si casi no hay montos, girada 270 y 90 (el ancho pasa a ser el alto)."""
+    img, ancho = rasterizar(doc, pagina, DPI)
+    mejor = ocr_pagina(img, ancho, lang, DPI)
+    if n_montos(mejor) >= MIN_MONTOS_GIRO:
+        return mejor
+    alto = doc[pagina - 1].get_height()
+    for giro in (270, 90):
+        d = ocr_pagina(img.rotate(giro, expand=True), alto, lang, DPI)
+        d["giro"] = giro
+        if n_montos(d) > n_montos(mejor):
+            mejor = d
+    return mejor
+
+
 def ocr_pdf(ruta_pdf, paginas, lang="eng", multipasada=False):
     """{pagina: datos} para las paginas pedidas."""
     doc = pdfium.PdfDocument(str(ruta_pdf))
@@ -100,8 +127,7 @@ def ocr_pdf(ruta_pdf, paginas, lang="eng", multipasada=False):
                 if multipasada:
                     out[str(p)] = ocr_mejor(doc, p, lang)
                 else:
-                    img, ancho = rasterizar(doc, p, DPI)
-                    out[str(p)] = ocr_pagina(img, ancho, lang, DPI)
+                    out[str(p)] = ocr_orientada(doc, p, lang)
         return out
     finally:
         doc.close()
