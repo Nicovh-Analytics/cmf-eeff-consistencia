@@ -738,3 +738,21 @@ El 03d toma las paginas del ECP del lector (`paginas_de` + `leer_estados`: las q
 **Regresion contra el 03d anterior**: los chequeos que cuadran no cambian (evolucion 98,0 -> 97,9 por los bloques nuevos), 03b, 03c, 04b y 04c sin cambios. probable_error* +7 casos (fondo-anio-columna), -0, todos de bloques que antes no se leian: el rotulo del aumento neto por transacciones (impreso inicio + aportes - rescates) en dos fondos de una AGF, confirmado contra el PDF (en un comparativo sale como error del PDF en la evolucion: misma causa); y la continuidad del XML en un fondo-anio, cuyo ECP del comparativo viene titulado "Estado de Flujo de Efectivo" (titulo de otro estado, confirmado) y cuyo XML no corresponde al periodo del PDF (pendiente de verificar a mano). Casos conocidos del 03d: 18 de 18.
 
 **Fuera de alcance**: emparejar las filas del ECP con el glosario y las columnas con las series del XML. Las reglas por glosa del 03d validan los casos conocidos; cambiarlas no gana cobertura.
+
+### D-CU10. Documento que no corresponde al fondo-anio (03f) (2026-11-11)
+
+Los chequeos de fidelidad comparan el PDF con el XML linea a linea. Si uno de los dos no es el documento del fondo-anio, cada linea difiere: el error se contaba varias veces (un fondo-anio: 3 casos) o ninguna (sin cifras en comun, el cruce y las identidades no encuentran pares: dos fondo-anio no tenian caso). Nueva etapa `validaciones/fidelidad/03f_documento.py`: por fondo-anio, fraccion de montos del PDF (>= 1.000, sin anios; renglones del lector, que ahora persiste el 03b en `renglones_pdf.csv`) que estan en el XML, por conjuntos y sin emparejar cuentas, y contra los XML de t-1 y t+1 del mismo fondo.
+
+| tipo | huella | caso |
+|---|---|---|
+| xml_periodo_desfasado | el XML de t repite el de t-1 (>= 60 %) y el comparativo del PDF es el actual del XML | error_XML |
+| xml_no_corresponde | el PDF calza con los XML vecinos; el XML de t con nada | error_XML |
+| pdf_no_corresponde | el XML de t calza con sus vecinos; el PDF con ninguno | error_PDF |
+
+Solo con el PDF actual < 40 % presente en el XML; los "no corresponde" con < 10 % y >= 20 montos (el primer anio NIIF lee parcial y queda `sin_explicar`, sin senal). Separacion limpia: 6 casos contra 4.469 normales, nada en la zona intermedia salvo 3 de 2011.
+
+**04c**: un caso por fondo-anio (raiz `todos/<tipo>`), que absorbe las senales que comparan PDF con XML en ese fondo-anio y las del 03c (clasifican con el XML); quedan aparte las del PDF consigo mismo (subtotal que no suma, rotulo, glosa). 127 senales absorbidas.
+
+**Revision (6 de 6 confirmados a mano)**: tres fondo-anio del mismo anio y uno mas: el XML trae las fechas del periodo (actual 2019, anterior 2018) con las cifras del anio anterior. un fondo-anio: el PDF calza con el comparativo del XML de t+1 y con el actual del de t-1; el XML de t no calza con nada. un fondo-anio: el PDF es el de otro fondo de la misma AGF (otro fondo de la misma administradora).
+
+**Regresion 04c** (con el 03d migrado, que no se habia propagado): 789 -> 797 casos. Por el 03f: 5 casos de documento XML (2 de ellos reemplazan 4 casos de sintomas) y 1 de documento PDF. Por el 03d: 3 rotulos (dos fondos de una AGF), un fondo-anio resuelto como error del PDF (antes PDF/XML), un fondo-anio: tipeo en el ECP (impreso -12.043, era -12.403; confirmado) y otro: diferencia de 23 en el resultado del comparativo, la misma del PDF anterior reimpresa.

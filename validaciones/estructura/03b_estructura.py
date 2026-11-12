@@ -26,6 +26,7 @@ glosa sola o valor solo; uno a uno). Sobre eso:
 Lee:      data/procesado/cruce_resumen.csv, encabezados.csv, cuentas.csv
           data/coords_pdf/...                  (03a_coordenadas.py, 03a_ocr.py)
 Escribe:  data/procesado/estructura_efe.csv          1 fila por fondo-anio-subtotal-columna
+          data/procesado/renglones_pdf.csv           renglones del lector ya emparejados (los usa el 03f)
           data/procesado/estructura_efe_no_suma.csv  los que no suman, clasificados
 """
 
@@ -459,7 +460,7 @@ def main():
     cta = cta[cta["archivo"].isin(ok["archivo"]) & cta["codigo"].notna() & cta["valor"].notna()]
     cta_de = dict(tuple(cta.groupby("archivo", sort=False)))
 
-    filas, sin_coords = [], 0
+    filas, renglones_out, sin_coords = [], [], 0
     for r in ok.itertuples(index=False):
         coords = cargar_coords(r.rut, r.anio, r.pdf)
         if coords is None:
@@ -471,6 +472,10 @@ def main():
         c = c.copy()
         c["estado_fin"] = asignar_secciones(c["codigo"].tolist())     # orden del XML
         renglones, paginas = leer_y_emparejar(coords, r.paginas_estados, c)
+        for est, rs in renglones.items():
+            renglones_out += [dict(rut=r.rut, anio=r.anio, estado=est, pagina=q["pagina"], glosa=q["glosa"],
+                                   actual=q["actual"], anterior=q["anterior"], codigo=q.get("codigo"),
+                                   coincide=q.get("coincide"), metodo=q["metodo"]) for q in rs]
         sx = c[c["serie"].isna()]
         xml = {(ctx, k): v for ctx, k, v in zip(sx["contexto"], sx["codigo"], sx["valor"])}
         # Pagina "espaciada": mas de la mitad de las palabras son de 1 caracter (letras y digitos
@@ -488,6 +493,7 @@ def main():
 
     df = pd.DataFrame(filas)
     df.to_csv(DIR_PROC / "estructura_efe.csv", index=False, encoding="utf-8-sig")
+    pd.DataFrame(renglones_out).to_csv(DIR_PROC / "renglones_pdf.csv", index=False, encoding="utf-8-sig")
     cand = clasificar(df)
     cand.to_csv(DIR_PROC / "estructura_efe_no_suma.csv", index=False, encoding="utf-8-sig")
 

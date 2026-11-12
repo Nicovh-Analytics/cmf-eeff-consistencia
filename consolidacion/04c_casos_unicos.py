@@ -14,6 +14,8 @@ Senales (esquema comun: fuente, rut, anio_doc, documento, columna, estado, linea
   03d   ecp_bloques.csv              glosa con el anio desactualizado (presentacion)
   04b   casos_senales.csv            las 12 lineas con sus cuatro versiones (patron -> celda)
   07    identidades_xml.csv          identidad rota dentro del XML (falla_grande)
+  03f   documento_periodo.csv        el XML (o el PDF) no es el documento de ese fondo-anio: un caso
+                                     por fondo-anio que absorbe las senales que comparan PDF con XML
 Clase: error / presentacion forman casos; lectura, inmaterial y revisar quedan como contexto.
 
 Caso: senales del mismo rut, anio_doc, documento y columna con la misma |dif| (+-2). Senales sin
@@ -23,7 +25,7 @@ hay, quedan como caso "revisar" fuera del conteo de errores.
 Contexto (no forma casos; se reporta): candidatos del 04 (fondo-anio) y comparativos del XML
 modificados del 07 sin pareja en el 04b.
 
-Lee:      las salidas de 03b, 03c, 03d, 04, 04b y 07 en data/procesado
+Lee:      las salidas de 03b, 03c, 03d, 03f, 04, 04b y 07 en data/procesado
 Escribe:  data/procesado/casos_unicos.csv, casos_unicos_senales.csv
 """
 import sys
@@ -41,7 +43,10 @@ ESTADO = {"total_activo": "ESF", "total_pasivo": "ESF", "activo_neto": "ESF", "e
           "aumento_neto": "EFE", "evolucion_efectivo": "EFE"}       # identidades del EFE (03b)
 TOTAL = {"activo_neto", "resultado_eri", "resultado_eri_despues", "saldo_final", "total_activo", "total_pasivo",
          "evolucion_efectivo"}
-NIVEL = {"linea": 0, "subtotal": 1, "total": 2, "identidad": 3}
+NIVEL = {"documento": -1, "linea": 0, "subtotal": 1, "total": 2, "identidad": 3}
+# 03f: tipo -> (documento, clase). Revision: los 6 confirmados a mano (fechas del XML, encabezado del PDF).
+DOCUMENTO = {"xml_periodo_desfasado": ("XML", "error"), "xml_no_corresponde": ("XML", "error"),
+             "pdf_no_corresponde": ("PDF", "error")}
 COLS = ["fuente", "rut", "anio_doc", "documento", "columna", "estado", "linea", "nivel", "dif", "clase",
         "forma", "detalle", "pagina"]
 
@@ -400,6 +405,18 @@ def senales():
                                "linea": ix["identidad"], "nivel": "identidad", "dif": ix["dif"],
                                "clase": ix["identidad"].map(lambda n: "revisar" if "por serie" in str(n) else "error"),
                                "forma": "identidad_xml", "detalle": "", "pagina": pd.NA}))
+    # 03f: documento que no corresponde al fondo-anio
+    ruta = P / "documento_periodo.csv"
+    if ruta.exists():
+        dp = pd.read_csv(ruta, dtype={"rut": str})
+        dp = dp[dp["tipo"].isin(DOCUMENTO)]
+        s.append(pd.DataFrame({"fuente": "03f", "rut": dp["rut"], "anio_doc": dp["anio"],
+                               "documento": dp["tipo"].map(lambda x: DOCUMENTO[x][0]), "columna": "actual",
+                               "estado": "todos", "linea": dp["tipo"], "nivel": "documento", "dif": 0.0,
+                               "clase": dp["tipo"].map(lambda x: DOCUMENTO[x][1]), "forma": "documento/" + dp["tipo"],
+                               "detalle": [f"pdf_actual_en_xml={a:.2f} xml_repite_t-1={b if pd.isna(b) else round(b, 2)}"
+                                           for a, b in zip(dp["normal"], dp["xml_repite"])],
+                               "pagina": pd.NA}))
     s.append(senales_04())
     t = pd.concat(s, ignore_index=True)
     t = t.reindex(columns=COLS + ["grupo"])
@@ -419,6 +436,22 @@ def agrupar(t):
                                  + t["forma"].astype(str).str.contains("rotulo").map({True: "rotulo", False: "glosa"}))
     # el rotulo que ve el 04 (subtipo rotulo_incorrecto) va al caso de rotulo del 03d del mismo fondo-anio
     forma_caso = forma_caso | (plantilla & (t["fuente"] == "04"))
+    # 03f: si el XML (o el PDF) no es el documento del fondo-anio, toda senal que compara el PDF
+    # con el XML en ese fondo-anio es sintoma del mismo problema: un caso. Se quedan fuera las del
+    # PDF consigo mismo (documento PDF: subtotal que no suma, rotulo, glosa) salvo las del 03c,
+    # que clasifican con el XML. Sin esto un XML con las cifras del anio anterior sumaba 3 casos.
+    doc = t[(t["fuente"] == "03f") & (t["clase"] == "error")]
+    malo = set(zip(doc["rut"], doc["anio_doc"]))
+    absorbe = (pd.Series([(r, a) in malo for r, a in zip(t["rut"], t["anio_doc"])], index=t.index)
+               & t["clase"].isin(["error", "presentacion", "revisar"])
+               & ((t["documento"] != "PDF") | (t["fuente"] == "03c")))
+    t.loc[absorbe, "clave"] = t["rut"] + "|" + t["anio_doc"].astype(str) + "|documento"
+    t.loc[absorbe, "grupo"] = pd.NA                     # no se une a casos del 04b de otro anio
+    plantilla = plantilla | absorbe
+    forma_caso = forma_caso | absorbe
+    if absorbe.any():
+        print(f"03f: {len(malo)} fondo-anio con un documento que no corresponde; "
+              f"{int(absorbe.sum()) - len(doc)} senales absorbidas en su caso")
     n = 0
     for _, g in t[forma_caso].sort_values(["clave", "adif"]).groupby("clave", sort=False):
         prev = None
@@ -487,7 +520,10 @@ def tipificar(t):
         if base.empty:
             base = g
         raiz = base.assign(_o=base["nivel"].map(NIVEL) + 10 * (base["fuente"] == "04")).sort_values("_o").iloc[0]
-        if len(e):
+        d3f = g[(g["fuente"] == "03f") & (g["clase"] == "error")]
+        if len(d3f):
+            tipo = "error_" + d3f["documento"].iloc[0]    # el documento entero; la linea raiz dice cual
+        elif len(e):
             docs = sorted(set(e["documento"]) - {"?"})
             if len(docs) > 1 and "PDF/XML" in docs:      # el 04 solo dice que difieren: manda el resto
                 docs.remove("PDF/XML")
