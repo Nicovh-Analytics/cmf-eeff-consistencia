@@ -756,3 +756,29 @@ Solo con el PDF actual < 40 % presente en el XML; los "no corresponde" con < 10 
 **Revision (6 de 6 confirmados a mano)**: tres fondo-anio del mismo anio y uno mas: el XML trae las fechas del periodo (actual 2019, anterior 2018) con las cifras del anio anterior. un fondo-anio: el PDF calza con el comparativo del XML de t+1 y con el actual del de t-1; el XML de t no calza con nada. un fondo-anio: el PDF es el de otro fondo de la misma AGF (otro fondo de la misma administradora).
 
 **Regresion 04c** (con el 03d migrado, que no se habia propagado): 789 -> 797 casos. Por el 03f: 5 casos de documento XML (2 de ellos reemplazan 4 casos de sintomas) y 1 de documento PDF. Por el 03d: 3 rotulos (dos fondos de una AGF), un fondo-anio resuelto como error del PDF (antes PDF/XML), un fondo-anio: tipeo en el ECP (impreso -12.043, era -12.403; confirmado) y otro: diferencia de 23 en el resultado del comparativo, la misma del PDF anterior reimpresa.
+
+### D-CU11. Rotulos equivocados del PDF como casos de presentacion (2026-11-12)
+
+Dos hallazgos que ya dejaba el lector pasan al 04c como presentacion (nunca error), un caso por fondo-anio y tipo, aparte del rotulo del ECP (aumento neto impreso como saldo):
+
+- **titulo_otro_estado**: pagina cuyo titulo impreso es el de otro estado y el contenido es inequivoco (D-L3; revision del lector 10/10). 60 paginas en 54 fondo-anio.
+- **glosa_otra_cuenta**: el emparejador marca `glosa_de` en un renglon cuya glosa el glosario reconoce (1,0, no por similitud) como otra cuenta que ya tiene su propio renglon con glosa y valor, y cuya cuenta asignada el glosario no reconoce. El 03b lo persiste en `renglones_pdf.csv`. 169 renglones marcados; muestra estratificada por par (2 por par) contra el texto leido y el PDF:
+
+| par (cuenta del renglon <- glosa impresa) | veredicto |
+|---|---|
+| flujo de financiamiento <- "flujo neto ... de la operacion" | rotulo (tres fondo-anio) |
+| resultado despues de distribucion <- "... antes de distribucion" | rotulo (dos fondo-anio, PDF) |
+| resultado antes de distribucion <- "... despues de distribucion" | rotulo (dos fondo-anio, PDF) |
+| utilidad antes de impuesto <- "... despues de impuesto" | rotulo (dos fondo-anio) |
+| activo neto <- "Total pasivo (excluido el activo neto ...)" | rotulo (un fondo, dos anios) |
+| dif. de cambio a costo amortizado <- "Cambios netos en valor razonable ... a costo amortizado" | rotulo (un fondo-anio, PDF) |
+| distribucion <- "... antes de distribucion" | lectura (glosa partida, OCR) |
+| saldo inicial <- "saldo final" | XML desfasado (03f): el emparejador cruza por valor |
+| ajustes por dif. de cambio no realizadas <- dif. de cambio netas | otro codigo XML para el mismo concepto |
+| activo neto / otros activos <- total activo; total ingresos <- total gastos | glosario o total repetido |
+
+Cuentan solo los 6 pares de rotulo (`PARES_GLOSA` del 04c) y solo si la glosa dice la palabra de la otra cuenta ("antes", "despues", "operacion", "total pasivo", "valor razonable ... costo amortizado"): una glosa generica sin "antes" ni "despues" no es un rotulo malo. 130 renglones en 126 fondo-anio.
+
+Los casos de rotulo tienen dif 0: no reciben senales sueltas de la misma celda.
+
+**Regresion 04c**: 798 -> 978 casos (+126 glosa_otra_cuenta, +54 titulo_otro_estado); errores sin cambio (370). Ningun otro conteo cambia.

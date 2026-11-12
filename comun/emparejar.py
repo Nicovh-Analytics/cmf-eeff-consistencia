@@ -17,7 +17,10 @@ similitud en la ficha). Por estado:
 
 El emparejador SI usa el XML (para eso esta), pero no el resultado de ninguna
 validacion: los chequeos se hacen despues, sobre su salida.
-Agrega a cada renglon: codigo, coincide ("ambos" | "glosa" | "valor" | None).
+Agrega a cada renglon: codigo, coincide ("ambos" | "glosa" | "valor" | None) y glosa_de: la cuenta
+que el glosario reconoce en su glosa (1.0), si no es la suya (que no llega a 1.0) y esa cuenta ya
+tiene su propio renglon con glosa y valor. Es un rotulo de otra cuenta impreso sobre estos montos
+("Flujo neto ... operacion" sobre el subtotal de financiamiento): hallazgo de presentacion.
 """
 import csv
 import re
@@ -181,7 +184,7 @@ def emparejar(rs, xml, estado, glosario=True, corridos=True):
         _corregir_corridos(rs, cod_glosa, xml)
     # 3. uno a uno: glosa, luego valor
     for r in rs:
-        r["codigo"], r["coincide"] = None, None
+        r["codigo"], r["coincide"], r["glosa_de"] = None, None, None
     con_monto = [i for i, r in enumerate(rs) if (r["actual"] is not None or r["anterior"] is not None)
                  and r["metodo"] != "encabezado"]
     v = lambda i: (rs[i]["actual"], rs[i]["anterior"])
@@ -200,6 +203,14 @@ def emparejar(rs, xml, estado, glosario=True, corridos=True):
         if c:
             rs[i]["codigo"], rs[i]["coincide"] = c, "valor"
             usados_r.add(i), usados_c.add(c)
+    # glosa de otra cuenta: solo con el glosario (1.0, no similitud), con esa cuenta ya en su renglon
+    # y la propia sin reconocer por el glosario (un patron que calza con las dos no es un rotulo malo)
+    propio = {r["codigo"]: i for i, r in enumerate(rs) if r["coincide"] == "ambos"}
+    for i in con_monto:
+        c0, c = cod_glosa[i], rs[i]["codigo"]
+        if (c and c0 and c0 != c and punt[i].get(c0) == 1.0 and punt[i].get(c, 0) < 1.0
+                and propio.get(c0, i) != i):
+            rs[i]["glosa_de"] = c0
     return rs
 
 

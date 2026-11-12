@@ -14,6 +14,9 @@ Senales (esquema comun: fuente, rut, anio_doc, documento, columna, estado, linea
   03d   ecp_bloques.csv              glosa con el anio desactualizado (presentacion)
   04b   casos_senales.csv            las 12 lineas con sus cuatro versiones (patron -> celda)
   07    identidades_xml.csv          identidad rota dentro del XML (falla_grande)
+  lector renglones_pdf.csv (03b)     rotulos del PDF (presentacion, un caso por fondo-anio y tipo):
+                                     titulo de otro estado sobre la pagina; glosa de otra cuenta
+                                     sobre un renglon (pares revisados en PARES_GLOSA)
   03f   documento_periodo.csv        el XML (o el PDF) no es el documento de ese fondo-anio: un caso
                                      por fondo-anio que absorbe las senales que comparan PDF con XML
 Clase: error / presentacion forman casos; lectura, inmaterial y revisar quedan como contexto.
@@ -25,7 +28,7 @@ hay, quedan como caso "revisar" fuera del conteo de errores.
 Contexto (no forma casos; se reporta): candidatos del 04 (fondo-anio) y comparativos del XML
 modificados del 07 sin pareja en el 04b.
 
-Lee:      las salidas de 03b, 03c, 03d, 03f, 04, 04b y 07 en data/procesado
+Lee:      las salidas de 03b (y sus renglones), 03c, 03d, 03f, 04, 04b y 07 en data/procesado
 Escribe:  data/procesado/casos_unicos.csv, casos_unicos_senales.csv
 """
 import sys
@@ -44,6 +47,33 @@ ESTADO = {"total_activo": "ESF", "total_pasivo": "ESF", "activo_neto": "ESF", "e
 TOTAL = {"activo_neto", "resultado_eri", "resultado_eri_despues", "saldo_final", "total_activo", "total_pasivo",
          "evolucion_efectivo"}
 NIVEL = {"documento": -1, "linea": 0, "subtotal": 1, "total": 2, "identidad": 3}
+# Glosa de otra cuenta impresa sobre un renglon: (cuenta del renglon, cuenta de la glosa) -> palabra que
+# la glosa tiene que decir. Revision (muestra estratificada por par, 2026-11-12): estos 6 pares eran
+# rotulos del PDF ("Flujo neto ... operacion" sobre financiamiento, dos filas "antes"/"despues" de
+# distribucion o de impuesto, "Total pasivo" sobre el activo neto). Los demas pares eran lectura
+# (glosa partida), otro codigo XML para el mismo concepto, un XML desfasado (03f) o el glosario.
+_ANTES_D = "AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios"
+_DESPUES_D = _ANTES_D.replace("AntesDe", "DespuesDe")
+PARES_GLOSA = {
+    ("FlujoNetoOriginadoPorActividadesDeFinanciamiento", "FlujoNetoOriginadoPorActividadesDeLaOperacion"): r"operaci",
+    (_DESPUES_D, _ANTES_D): r"antesde(la)?distribu",
+    (_ANTES_D, _DESPUES_D): r"despuesde(la)?distribu",
+    ("UtilidadPerdidaDeLaOperacionAntesDeImpuesto", "UtilidadPerdidaDeLaOperacionDespuesDeImpuesto"): r"despuesdeimpuesto",
+    ("ActivoNetoAtribuibleALosParticipes", "TotalPasivo"): r"totalpasivo",
+    # "Cambios netos en valor razonable ... a costo amortizado" sobre las diferencias de cambio (1 caso, confirmado)
+    ("DiferenciasDeCambioNetasSobreActivosFinancierosACostoAmortizado",
+     "CambiosNetosEnValorRazonableDeActivosYPasivosFinancierosAValorRazonableConEfectoEnResultados"):
+        r"valorrazonable.*costoamortizado",
+}
+PLANTILLA = "rotulo|glosa_desactualizada|titulo_otro_estado|glosa_otra_cuenta"
+
+
+def tipo_plantilla(forma):
+    f = str(forma)
+    return ("rotulo" if "rotulo" in f else "titulo" if "titulo_otro" in f else
+            "glosa_cuenta" if "glosa_otra" in f else "glosa")
+
+
 # 03f: tipo -> (documento, clase). Revision: los 6 confirmados a mano (fechas del XML, encabezado del PDF).
 DOCUMENTO = {"xml_periodo_desfasado": ("XML", "error"), "xml_no_corresponde": ("XML", "error"),
              "pdf_no_corresponde": ("PDF", "error")}
@@ -298,6 +328,35 @@ def compensa_subtotal(s, subtotales, arch, v):
     return s
 
 
+def senales_rotulos():
+    """Rotulos que deja el lector en los renglones del 03b: titulo de otro estado (pagina) y glosa
+    de otra cuenta (renglon, solo los pares de PARES_GLOSA y si la glosa dice la palabra)."""
+    import re
+    from comun.lector import norm
+    ruta = P / "renglones_pdf.csv"
+    if not ruta.exists():
+        return pd.DataFrame(columns=COLS)
+    r = pd.read_csv(ruta, dtype={"rut": str, "rotulo": str, "glosa_de": str}, low_memory=False,
+                    usecols=["rut", "anio", "pagina", "estado", "glosa", "codigo", "rotulo", "glosa_de"])
+    ti = r[r["rotulo"].notna()].drop_duplicates(["rut", "anio", "pagina"])
+    out = [pd.DataFrame({"fuente": "lector", "rut": ti["rut"], "anio_doc": ti["anio"], "documento": "PDF",
+                         "columna": "actual", "estado": ti["estado"], "linea": "titulo:" + ti["rotulo"],
+                         "nivel": "linea", "dif": 0.0, "clase": "presentacion", "forma": "titulo_otro_estado",
+                         "detalle": "titulo " + ti["rotulo"] + " sobre el " + ti["estado"], "pagina": ti["pagina"]})]
+    g = r[r["glosa_de"].notna()]
+    ok = [bool((rx := PARES_GLOSA.get((c, d))) and re.search(rx, norm(str(gl))))
+          for c, d, gl in zip(g["codigo"], g["glosa_de"], g["glosa"])]
+    g = g[ok]
+    out.append(pd.DataFrame({"fuente": "lector", "rut": g["rut"], "anio_doc": g["anio"], "documento": "PDF",
+                             "columna": "actual", "estado": g["estado"], "linea": g["codigo"], "nivel": "linea",
+                             "dif": 0.0, "clase": "presentacion", "forma": "glosa_otra_cuenta",
+                             "detalle": "glosa de " + g["glosa_de"] + ": " + g["glosa"].astype(str).str[:80],
+                             "pagina": g["pagina"]}))
+    print(f"lector: titulo de otro estado en {len(ti)} paginas; glosa de otra cuenta en {len(g)} renglones "
+          f"(de {int(r['glosa_de'].notna().sum())} marcados por el emparejador)")
+    return pd.concat(out, ignore_index=True)
+
+
 def senales():
     s = []
     # 03b: subtotal que no suma (PDF)
@@ -417,6 +476,7 @@ def senales():
                                "detalle": [f"pdf_actual_en_xml={a:.2f} xml_repite_t-1={b if pd.isna(b) else round(b, 2)}"
                                            for a, b in zip(dp["normal"], dp["xml_repite"])],
                                "pagina": pd.NA}))
+    s.append(senales_rotulos())
     s.append(senales_04())
     t = pd.concat(s, ignore_index=True)
     t = t.reindex(columns=COLS + ["grupo"])
@@ -431,9 +491,9 @@ def agrupar(t):
     t["caso_id"] = pd.NA
     t["clave"] = t["rut"] + "|" + t["anio_doc"].astype(str) + "|" + t["documento"] + "|" + t["columna"]
     # rotulo y glosa: un caso por fondo-anio (es la plantilla)
-    plantilla = t["forma"].astype(str).str.contains("rotulo|glosa_desactualizada")
+    plantilla = t["forma"].astype(str).str.contains(PLANTILLA)
     t.loc[plantilla, "clave"] = (t["rut"] + "|" + t["anio_doc"].astype(str) + "|"
-                                 + t["forma"].astype(str).str.contains("rotulo").map({True: "rotulo", False: "glosa"}))
+                                 + t["forma"].map(tipo_plantilla))
     # el rotulo que ve el 04 (subtipo rotulo_incorrecto) va al caso de rotulo del 03d del mismo fondo-anio
     forma_caso = forma_caso | (plantilla & (t["fuente"] == "04"))
     # 03f: si el XML (o el PDF) no es el documento del fondo-anio, toda senal que compara el PDF
@@ -485,6 +545,8 @@ def agrupar(t):
     casos = t[t["caso_id"].notna()]
     idx = {}
     for r in casos.itertuples():
+        if str(r.forma).startswith(("titulo_otro", "glosa_otra")):
+            continue        # dif 0: no es una celda con monto a la que pegar senales
         idx.setdefault((r.rut, r.anio_doc, r.columna), []).append((r.adif, r.caso_id))
     def pegar():
         for i, r in t[t["caso_id"].isna() & (t["documento"].isin(["?", "PDF/XML"]) | (t["clase"] == "revisar"))
@@ -532,7 +594,9 @@ def tipificar(t):
                 tipo = "error_continuidad"      # identidad del XML; el PDF sin contrastar (revision: 4/8 igual)
         else:
             f = str(raiz["forma"])
-            tipo = ("desglose" if "desglose" in f else "rotulo" if "rotulo" in f else "glosa" if "glosa" in f else
+            tipo = ("desglose" if "desglose" in f else "rotulo" if "rotulo" in f else
+                    "titulo_otro_estado" if "titulo_otro" in f else "glosa_otra_cuenta" if "glosa_otra" in f else
+                    "glosa" if "glosa" in f else
                     "agregacion_xml" if "agregacion" in f else
                     "reexpresion" if "reexpresion" in f else "criterio" if "criterio" in f else "reclasificacion")
         out.append(dict(caso_id=cid, rut=raiz["rut"], anio_doc=raiz["anio_doc"], columna=raiz["columna"],

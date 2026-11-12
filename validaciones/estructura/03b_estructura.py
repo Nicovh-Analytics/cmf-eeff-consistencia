@@ -26,7 +26,7 @@ glosa sola o valor solo; uno a uno). Sobre eso:
 Lee:      data/procesado/cruce_resumen.csv, encabezados.csv, cuentas.csv
           data/coords_pdf/...                  (03a_coordenadas.py, 03a_ocr.py)
 Escribe:  data/procesado/estructura_efe.csv          1 fila por fondo-anio-subtotal-columna
-          data/procesado/renglones_pdf.csv           renglones del lector ya emparejados (los usa el 03f)
+          data/procesado/renglones_pdf.csv           renglones del lector ya emparejados (03f; rotulos en el 04c)
           data/procesado/estructura_efe_no_suma.csv  los que no suman, clasificados
 """
 
@@ -475,7 +475,8 @@ def main():
         for est, rs in renglones.items():
             renglones_out += [dict(rut=r.rut, anio=r.anio, estado=est, pagina=q["pagina"], glosa=q["glosa"],
                                    actual=q["actual"], anterior=q["anterior"], codigo=q.get("codigo"),
-                                   coincide=q.get("coincide"), metodo=q["metodo"]) for q in rs]
+                                   coincide=q.get("coincide"), metodo=q["metodo"], rotulo=q.get("rotulo"),
+                                   glosa_de=q.get("glosa_de")) for q in rs]
         sx = c[c["serie"].isna()]
         xml = {(ctx, k): v for ctx, k, v in zip(sx["contexto"], sx["codigo"], sx["valor"])}
         # Pagina "espaciada": mas de la mitad de las palabras son de 1 caracter (letras y digitos
