@@ -15,6 +15,9 @@ Por cada fila sin veredicto:
   3. pide el veredicto con una tecla y una nota opcional.
 Guarda la planilla despues de CADA respuesta: se puede cortar con q y retomar.
 Solo escribe las columnas veredicto / doc_con_error / nota de la planilla.
+
+Planilla de lectura (muestra_lectura.py: columnas etapa y causa): muestra PDF y XML termino a termino y
+el detalle, y la tecla escribe la CAUSA (g d c n a r o) en vez del veredicto.
 """
 import os
 import re
@@ -31,6 +34,8 @@ DIR_FICHAS = RAIZ / "verificacion" / "fichas"
 VEREDICTOS = {"e": "error_pdf", "x": "error_xml", "l": "lectura", "o": "otro",
               "1": "error_pdf", "2": "error_xml", "3": "lectura", "4": "otro"}
 DOC = {"e": "PDF", "x": "XML", "1": "PDF", "2": "XML"}
+CAUSAS = {"g": "glosa_pegada", "d": "desfase", "c": "columna", "n": "digitos", "a": "apertura",
+          "r": "error_real", "o": "otro"}
 
 
 def cargar_subtotales():
@@ -96,7 +101,9 @@ def main():
         sys.exit(__doc__)
     planilla = Path(sys.argv[1])
     df = pd.read_excel(planilla, dtype={"rut": str})
-    for c in ("veredicto", "doc_con_error", "nota"):
+    modo_lect = {"etapa", "causa"} <= set(df.columns)     # revision_lectura.xlsx
+    COL, TECLAS = ("causa", CAUSAS) if modo_lect else ("veredicto", VEREDICTOS)
+    for c in ((COL, "nota") if modo_lect else ("veredicto", "doc_con_error", "nota")):
         df[c] = df[c].fillna("").astype(str) if c in df else ""
 
     res = pd.read_csv(CMF_HOME / "procesado" / "cruce_resumen.csv",
@@ -108,7 +115,7 @@ def main():
 
     # XML: solo las cuentas sin serie de los fondos de la planilla (se lee una vez)
     modo_03c = "identidad" in df.columns or "chequeo" in df.columns   # 03c/03d: PDF y XML por termino
-    modo_03d = "chequeo" in df.columns
+    modo_03d = "chequeo" in df.columns or modo_lect
     modo_comp = "pagina_t1" in df.columns       # 03e / 04b: PDF y XML de t y del comparativo de t+1
     subtotales, xml = {}, {}
     # 03d: cifras por serie del XML, para los casos de serie (el 03d no empareja nombres de series)
@@ -193,9 +200,9 @@ def main():
         return CMF_HOME / "archivos" / rut / str(anio) / nombre if nombre else None
 
     todos = "--todos" in sys.argv
-    casos = list(df.index) if todos else list(df.index[df["veredicto"].str.strip() == ""])
+    casos = list(df.index) if todos else list(df.index[df[COL].str.strip() == ""])
     print(f"{len(casos)} casos {'(todos)' if todos else 'pendientes'} de {len(df)}.\n  Teclas: "
-          + ", ".join(f"{k}={v}" for k, v in VEREDICTOS.items())
+          + ", ".join(f"{k}={v}" for k, v in TECLAS.items())
           + "\n  p=PDF del caso en su pagina, v=ver XML en VS Code (t y t+1 en planillas de comparativos),"
             " a / f = PDF anio anterior / siguiente, va / vf = XML anio anterior / siguiente,"
             " b=volver al caso anterior,"
@@ -206,7 +213,23 @@ def main():
         i = casos[pos]
         r = df.loc[i]
         anio = int(r["anio"])
-        if modo_03c:
+        if modo_lect:
+            print(f"\n[{pos + 1}/{len(casos)}] {r['rut']} {anio}  {r['etapa']} {r['que']} ({r['columna']})"
+                  f"  pag. {r.get('pagina', '?')}")
+            tp, tx = terminos(r.get("pdf")), terminos(r.get("xml"))
+            print(f"     {'termino':<22} {'PDF':>16} {'XML':>16}")
+            for k in dict.fromkeys([*tp, *tx]):
+                print(f"     {k:<22} {monto(tp.get(k)):>16} {monto(tx.get(k)):>16}")
+            print("   detalle:")
+            for linea in str(r.get("detalle", "")).split(" | "):
+                print("     ", linea)
+            if r["etapa"] == "03b":
+                mostrar_xml(r["rut"], anio, str(r["que"]).removeprefix("no suma: "), r["columna"])
+            elif r["etapa"] == "03d":
+                chequeo, col = (str(r["que"]).split("/", 1) + [""])[:2]
+                if col != "total" or chequeo == "suma_series":
+                    mostrar_series(r)
+        elif modo_03c:
             que = r["identidad"] if "identidad" in r else f"ECP {r['chequeo']} / {r['col']}"
             print(f"\n[{pos + 1}/{len(casos)}] {r['rut']} {anio}  {que} ({r['columna']})"
                   f"  pag. {r.get('paginas', r.get('pagina', '?'))}  [{r.get('estrato', '')} {r.get('clase', '')}]")
@@ -224,8 +247,8 @@ def main():
             for linea in str(r.get("detalle", "")).split(" | "):
                 print("     ", linea)
             mostrar_xml(r["rut"], anio, r.get("subtotal"), r.get("columna"))
-        if r["veredicto"].strip():
-            print(f"  ya revisado: {r['veredicto']}  |  nota: {r['nota'] or '-'}")
+        if r[COL].strip():
+            print(f"  ya revisado: {r[COL]}  |  nota: {r['nota'] or '-'}")
 
         pdf = ruta_pdf(r["rut"], anio)
         anio_t = int(r["anio_t"]) if modo_comp and "anio_t" in r and pd.notna(r["anio_t"]) else anio
@@ -240,8 +263,8 @@ def main():
                     abrir_pdf(ruta, p_) if ruta else print(f"  (sin PDF de {a_})")
             elif not pdf:
                 print("  (sin PDF en cruce_resumen)")
-            elif modo_03c:
-                for p in str(r.get("paginas", r.get("pagina", ""))).split(","):     # ESF y EFE pueden estar en paginas distintas
+            elif modo_03c or modo_lect:
+                for p in str(r.get("paginas", r.get("pagina", ""))).replace(".0", "").split(","):     # ESF y EFE pueden estar en paginas distintas
                     abrir_pdf(pdf, int(p) if p.strip().isdigit() else None)
             else:
                 abrir_pdf(pdf, r.get("pagina"))
@@ -295,9 +318,10 @@ def main():
                 pag = int(pag) if pd.notna(pag) and str(pag).strip().isdigit() else None
                 abrir_pdf(ruta, pag) if ruta else print(f"  (sin PDF de {otro})")
                 continue
-            if k in VEREDICTOS:
-                df.at[i, "veredicto"] = VEREDICTOS[k]
-                df.at[i, "doc_con_error"] = DOC.get(k, "")
+            if k in TECLAS:
+                df.at[i, COL] = TECLAS[k]
+                if not modo_lect:
+                    df.at[i, "doc_con_error"] = DOC.get(k, "")
                 anterior = df.at[i, "nota"]
                 nota = input(f"  nota (Enter = {'mantener la anterior' if anterior else 'sin nota'})> ").strip()
                 df.at[i, "nota"] = nota or anterior

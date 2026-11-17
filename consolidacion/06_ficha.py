@@ -251,6 +251,18 @@ def hoja_estado(ws, cta_estado, comp: Comparador):
     ws.freeze_panes = "B2"
 
 
+# Orden del ECP como se presenta (no el alfabetico del XML): inicio, aportes, rescates, aumento neto,
+# resultado antes, distribucion (total, en efectivo, en cuotas), resultado despues, cierre
+ORDEN_ECP = ["al01deenero", "^aportes", "^rescate", "transacciones", "antesdedistribucion",
+             "^distribuciondebeneficios$", "^distribucion.*efectivo", "^distribucion.*cuotas", "^distribucion",
+             "despuesdedistribucion", "al31dediciembre"]
+
+
+def rango_ecp(base):
+    b = str(base).lower()
+    return next((i for i, rx in enumerate(ORDEN_ECP) if re.search(rx, b)), len(ORDEN_ECP)), b
+
+
 def hoja_ecp(ws, cta_ecp, comp: Comparador):
     """ECP: por periodo, bloques XML / PDF / Dif (y Original / Dif vs orig en
     Anterior), con las series en columnas y el Total al final."""
@@ -261,7 +273,7 @@ def hoja_ecp(ws, cta_ecp, comp: Comparador):
     fila = 1
     for ctx in _contextos(cta_ecp):
         bloque = cta_ecp[cta_ecp["contexto"] == ctx]
-        bases = list(bloque["base"].drop_duplicates())
+        bases = sorted(bloque["base"].drop_duplicates(), key=rango_ecp)      # orden del estado
         celdas = {}   # base -> [(xml, pdf, dif, est, orig, dif_orig) por columna]
         for base in bases:
             g = bloque[bloque["base"] == base]

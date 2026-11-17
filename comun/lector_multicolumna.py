@@ -34,16 +34,65 @@ TOL_LINEA = 3.0       # palabras de una misma linea (pt)
 RE_CONTINUA = re.compile(r"^([a-záéíóúñ]|\((?![A-ZÁÉÍÓÚÑ]))")
 
 
-def franjas_multi(nums, ancho):
-    """Bordes derechos de las columnas de montos, de izquierda a derecha."""
-    xs = sorted(w[2] for w in nums if w[2] > ancho * X_MIN and _es_monto_de_franja(w[0]))
+MESES = re.compile(r"enero|febrero|marzo|abril|mayo|junio|julio|agosto|sep?tiembre|octubre|noviembre|diciembre",
+                   re.I)
+
+
+def _fechas_glosa(palabras):
+    """Dias de las glosas ("al 1 de enero", "al 31 de diciembre"): entero de 1-2 digitos con un mes
+    a su derecha en la misma linea. En la variante cortos formaban una columna falsa (revision D-L9:
+    una serie vacia, o tablas que perdian las series del inicio y del cierre)."""
+    out = set()
+    for w in palabras:
+        if re.fullmatch(r"\d{1,2}", w[0]) and any(
+                abs(v[3] - w[3]) <= 2 and 0 <= v[1] - w[2] <= 60 and MESES.search(v[0]) for v in palabras):
+            out.add((w[2], w[3]))
+    return out
+
+
+RE_CORTO = re.compile(r"\(?[-−–—]?\d{1,2}\)?")      # monto de 1-2 digitos: "6", "(18)"
+
+
+def _agrupar(xs):
     grupos = []
-    for x in xs:
+    for x in sorted(xs):
         if grupos and x - grupos[-1][-1] <= GAP_FRANJA:
             grupos[-1].append(x)
         else:
             grupos.append([x])
-    return [sorted(g)[len(g) // 2] for g in grupos if len(g) >= MIN_FRANJA]
+    return grupos
+
+
+def franjas_multi(nums, ancho, cortos=False):
+    """Bordes derechos de las columnas de montos, de izquierda a derecha.
+    Primero con montos "de franja" (separador de miles o 3+ digitos). Despues, las series de
+    montos chicos (1-2 digitos y guiones: fondos o series pequenas) que no forman franja con esa
+    regla y quedaban "lejos" de toda franja, descartadas sin aviso (diag_suma_series: la mayor
+    causa de suma_series de lectura): enteros cortos alineados fuera de las franjas, 3+ en la
+    columna. No a la izquierda de la primera franja por mas de 1,5 pasos: ahi va la columna de notas.
+    Solo con cortos=True: en el universo esta pasada sola agrega columnas falsas (bloques confiables
+    80% -> 63%); el 03d la usa como variante y se queda con ella solo si la tabla suma mejor."""
+    franjas = [sorted(g)[len(g) // 2] for g in
+               _agrupar(w[2] for w in nums if w[2] > ancho * X_MIN and _es_monto_de_franja(w[0]))
+               if len(g) >= MIN_FRANJA]
+    if len(franjas) < 2:
+        return franjas
+    paso = sorted(b - a for a, b in zip(franjas, franjas[1:]))[(len(franjas) - 1) // 2]
+    # Tablas anchas (15+ series): las primeras columnas quedan antes del 25% del ancho y se perdian
+    # enteras (diag_suma_series: dos series en x1 139 y 176 con la primera franja en 217). Se agregan
+    # hacia la izquierda solo si siguen el paso regular de las columnas, una a una.
+    izq = sorted((sorted(g)[len(g) // 2] for g in
+                  _agrupar(w[2] for w in nums if w[2] <= ancho * X_MIN and _es_monto_de_franja(w[0]))
+                  if len(g) >= MIN_FRANJA), reverse=True)
+    for x in izq:
+        if abs(franjas[0] - x - paso) <= GAP_FRANJA / 2:
+            franjas.insert(0, x)
+    if not cortos:
+        return franjas
+    cortos = [w[2] for w in nums if w[2] > ancho * X_MIN and RE_CORTO.fullmatch(w[0])
+              and min(abs(w[2] - f) for f in franjas) > TOL_FRANJA]
+    nuevas = [sorted(g)[len(g) // 2] for g in _agrupar(cortos) if len(g) >= MIN_FRANJA]
+    return sorted(franjas + [x for x in nuevas if x >= franjas[0] - 1.5 * paso])
 
 
 RE_INCOMPLETO = re.compile(r"\(?[-−–—]?\d{1,3}(?:\.\d{3})*\.\d{1,2}")    # "(5.250.38": ultimo grupo corto
@@ -69,16 +118,21 @@ def _unir_cortados(nums):
     return out
 
 
-def filas_multicolumna(pagina):
+def filas_multicolumna(pagina, cortos=False):
+    """cortos=True: tambien columnas de montos chicos y enteros cortos dentro de la tabla como
+    montos (no notas). Ver franjas_multi."""
     palabras, ancho = pagina["palabras"], pagina["ancho"]
     es_num = lambda t: bool(RE_NUMTOK.match(t)) and not RE_FECHA_NUM.match(t)
     nums = _unir_tocandose([w for w in palabras if es_num(w[0])])
     nums = _unir_cortados(nums)
+    if cortos:
+        fechas = _fechas_glosa(palabras)
+        nums = [w for w in nums if (w[2], w[3]) not in fechas]
     # Los anios van como texto (no son montos): sirven para fechar cada bloque
     textos = [w for w in palabras if not es_num(w[0]) or re.fullmatch(r"\(?(19|20)\d\d\)?", w[0])]
     # Plantillas con digitos sueltos ("2 0 2 2"): el anio solo aparece al unirlos
     textos += [w for w in nums if re.fullmatch(r"(19|20)\d\d", w[0])]
-    franjas = franjas_multi(nums, ancho)
+    franjas = franjas_multi(nums, ancho, cortos)
     if not franjas:
         return [], []
 
@@ -93,8 +147,11 @@ def filas_multicolumna(pagina):
         k = min(range(len(franjas)), key=d.__getitem__)
         if d[k] > TOL_FRANJA:
             continue                                   # nota, numero de la glosa, pie de pagina
-        if re.fullmatch(r"\(?\d{1,2}\)?", w[0]) and d[k] > 5:
-            continue                                   # nota pegada a la primera columna
+        # nota pegada a la primera columna. Con cortos, solo a su IZQUIERDA: dentro de la tabla un
+        # entero corto a > 5 pt es un monto chico ("(26)" / "48": el parentesis corre el borde ~6 pt)
+        if (re.fullmatch(r"\(?\d{1,2}\)?", w[0]) and d[k] > 5
+                and (not cortos or (k == 0 and w[2] < franjas[0]))):
+            continue
         items.append((w[3], "n", (k, v, irregular)))
 
     lineas = []

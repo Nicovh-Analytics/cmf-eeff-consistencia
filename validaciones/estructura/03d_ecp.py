@@ -49,6 +49,7 @@ from config import CMF_HOME, casos_conocidos, umbral_materialidad
 
 DIR_PROC = CMF_HOME / "procesado"
 TOL = 2
+TOL_LINEA = 3.0      # mismo valor que comun/lector_multicolumna
 
 
 def norm(s):
@@ -100,84 +101,157 @@ def paginas_ecp(coords, paginas_estados):
     return sorted(p for p, ests in pags.items() if "ECP" in ests)
 
 
+def _bloques_pagina(pg, p, cortos=False):
+    """Bloques (inicio ... cierre) de una pagina, con las franjas de columnas de esa pagina."""
+    bloques = []
+    renglones, franjas = filas_multicolumna(pg, cortos)
+    if not franjas:
+        return []
+    hay_total = columna_total(pg, franjas)
+    b, encabezado, pendiente, y_fin, solo_montos, ultima = None, [], None, -1, None, None
+    for r in renglones:
+        g = norm(r["glosa"])
+        clave = next((k for k, rx in FILAS if rx.search(g)), None)
+        # Montos alineados ARRIBA de la celda: renglon solo con montos y, justo despues, la
+        # glosa reconocida sin montos ("1.468.726" / "Activo neto ... al 31 de diciembre").
+        # Muestra de cobertura: sin_fila_cierre de varias AGF.
+        if clave and not r["vals"] and solo_montos is not None and r["y"] - solo_montos["y"] <= 15:
+            r = {**r, "vals": dict(solo_montos["vals"]), "irr": set(solo_montos["irr"])}
+            solo_montos = None
+        else:
+            # tambien si la "glosa" es solo el rotulo de unidades ("MUS$ MUS$ ..."): los montos del
+            # inicio quedan a la altura de esa linea (diag de cobertura 03d: pagina sin bloque)
+            solo_montos = r if (clave is None and r["vals"] and (not g or RE_UNIDADES.fullmatch(g))) else None
+        # Fila reconocida sin montos ("Activo neto ... al 31 de diciembre") seguida de una
+        # sin nombre con montos ("Valor Cuota  25.506.525 ..."): los montos son de la primera.
+        if clave is None and r["vals"] and pendiente:
+            clave, r = pendiente[0], {**r, "glosa": pendiente[1] + " " + r["glosa"]}
+            g = norm(r["glosa"])
+        pendiente = (clave, r["glosa"]) if clave and not r["vals"] else None
+        if not r["vals"] or clave is None:
+            if b is None:
+                encabezado.append(r["glosa"])
+            continue
+        if clave == "activo_neto":
+            cierre, inicio = bool(RE_CIERRE.search(g)), bool(RE_INICIO.search(g))
+            # Un bloque abierto sin ningun movimiento no era una apertura (cierre del bloque de
+            # la pagina anterior arriba de la pagina, por ejemplo): se descarta y esta fila abre.
+            # (solo si esa apertura se titulaba como cierre: hay plantillas donde la apertura sin fecha va
+            # seguida de "al 1 de enero" con los montos de aportes por un desfase de filas)
+            if (b is not None and not MOVIMIENTOS & set(b["filas"]) and not cierre
+                    and RE_CIERRE.search(norm(b["glosa_inicio"]))):
+                b = None
+            # Abre cualquier fila de activo neto si no hay bloque: el saldo inicial tambien se
+            # titula "al 31 de diciembre de <anio anterior>" (muestra de cobertura). Salvo que
+            # venga justo despues de movimientos: es el cierre de un bloque cuyo inicio no se
+            # reconocio, no una apertura (texto espaciado: abria con el cierre y mezclaba periodos).
+            huerfano = cierre and ultima in MOVIMIENTOS | {"res_generico"}
+            ultima = clave
+            if b is None and huerfano:
+                continue
+            if b is None:
+                b = dict(pagina=p, n_cols=len(franjas), hay_total=hay_total, encabezado=encabezado,
+                         total_propio=columna_total(pg, franjas, y_fin, r["y"]),
+                         _pg=pg, _franjas=franjas, _y=r["y"],
+                         glosa_inicio=r["glosa"], glosa_cierre="", ocr=pg.get("origen") == "ocr",
+                         filas={"inicio": dict(r["vals"])}, irr={("inicio", k) for k in r["irr"]})
+            elif b is not None and (cierre or not inicio):
+                b["filas"]["cierre"] = dict(r["vals"])
+                b["irr"] |= {("cierre", k) for k in r["irr"]}
+                b["glosa_cierre"] = r["glosa"]
+                b["_y_fin"] = r["y"]
+                bloques.append(b)
+                b, encabezado, y_fin = None, [], r["y"]
+            continue
+        ultima = clave
+        if b is None:
+            continue
+        if clave == "res_generico":
+            clave = "res_antes" if "res_antes" not in b["filas"] else "res_despues"
+        if clave == "dist_parte":
+            acc = b["filas"].setdefault("dist_partes", {})
+            for k, v in r["vals"].items():
+                acc[k] = acc.get(k, 0) + v
+        else:
+            b["filas"].setdefault(clave, dict(r["vals"]))
+            b["irr"] |= {(clave, k) for k in r["irr"]}
+    return bloques
+
+
+def _por_tabla(pg, p, bloques, cortos=False):
+    """Pagina con 2+ tablas apiladas (actual arriba, anterior abajo): las franjas de la pagina
+    mezclan las columnas de ambas cuando tienen distinto numero de series o distinto ancho, y
+    los montos de una tabla quedan "lejos" de toda franja o chocan en la misma (se perdian sin
+    aviso: diag_suma_series, 4.038 suma_series de lectura). Cada tabla se relee con sus propias
+    franjas: palabras desde el cierre de la tabla anterior hasta su cierre. Si la relectura no da
+    exactamente un bloque, queda el de la pagina."""
+    out, y0 = [], -1.0
+    for b in bloques:
+        sub = {**pg, "palabras": [w for w in pg["palabras"] if y0 < w[3] <= b["_y_fin"] + TOL_LINEA]}
+        r = _bloques_pagina(sub, p, cortos)
+        out.append(r[0] if len(r) == 1 else b)
+        y0 = b["_y_fin"] + TOL_LINEA
+    return out
+
+
+def _fallas_suma(bs):
+    """Filas que no suman al Total (o sin Total) en los bloques de una pagina."""
+    n = 0
+    for b in bs:
+        b["total"] = indice_total(b)
+        if b["total"] is None:
+            n += len(b["filas"])
+        else:
+            n += sum(abs(d) > TOL for c, _, _, d in chequear(b) if c == "suma_series")
+    return n
+
+
+def _cubre(y, x):
+    """La variante y no pierde nada de x: las mismas filas o mas, y en cada fila al menos tantas
+    columnas con monto, y al menos los mismos chequeos por columna (transacciones / evolucion).
+    Revision D-L9: la variante mejoraba la suma de series pero borraba las series del inicio y el
+    cierre, y con ellas los chequeos que destapaban rotulos."""
+    if not set(x["filas"]) <= set(y["filas"]):
+        return False
+    if any(len(y["filas"][f]) < len(v) for f, v in x["filas"].items()):
+        return False
+    por_col = lambda b: sum(c in ("transacciones", "evolucion") for c, *_ in chequear(b))
+    return por_col(y) >= por_col(x)
+
+
+def _leer_pagina(pg, p):
+    """Bloques de la pagina con las columnas de montos "de franja" y, como variante, agregando las
+    columnas de montos chicos (filas_multicolumna cortos=True). La variante se usa solo si deja menos
+    filas que no suman al Total, con los mismos bloques, sin perder el Total de ninguno ni filas,
+    montos o chequeos por columna (_cubre); y sin los dias de las glosas como montos. Aplicada
+    sola agregaba columnas falsas (bloques confiables 80% -> 63%, un Total perdido)."""
+    def leer(cortos):
+        bs = _bloques_pagina(pg, p, cortos)
+        return _por_tabla(pg, p, bs, cortos) if len(bs) > 1 else bs
+    a = leer(False)
+    fa = _fallas_suma(a)
+    if not fa:
+        return a
+    b = leer(True)
+    if (len(b) == len(a) and _fallas_suma(b) < fa
+            and all(y["total"] is not None for x, y in zip(a, b) if x["total"] is not None)
+            and all(_cubre(y, x) for x, y in zip(a, b))):
+        for x in b:
+            x["cortos"] = True
+        return b
+    return a
+
+
 def leer_bloques(coords, paginas, exigir_titulo=True):
     """Bloques del ECP (inicio ... cierre). exigir_titulo: solo paginas con el titulo del estado
-    en su texto (sin el, las paginas ya vienen elegidas por el lector: paginas_ecp)."""
+    en su texto (sin el, las paginas ya vienen elegidas por el lector: paginas_ecp).
+    Franjas por tabla, no por pagina, cuando la pagina trae 2+ tablas (_por_tabla)."""
     bloques = []
     for p in paginas:
         pg = coords["paginas"].get(str(p))
         if not pg or (exigir_titulo and not RE_TITULO.search(norm(" ".join(w[0] for w in pg["palabras"])))):
             continue
-        renglones, franjas = filas_multicolumna(pg)
-        if not franjas:
-            continue
-        hay_total = columna_total(pg, franjas)
-        b, encabezado, pendiente, y_fin, solo_montos, ultima = None, [], None, -1, None, None
-        for r in renglones:
-            g = norm(r["glosa"])
-            clave = next((k for k, rx in FILAS if rx.search(g)), None)
-            # Montos alineados ARRIBA de la celda: renglon solo con montos y, justo despues, la
-            # glosa reconocida sin montos ("1.468.726" / "Activo neto ... al 31 de diciembre").
-            # Muestra de cobertura: sin_fila_cierre de varias AGF.
-            if clave and not r["vals"] and solo_montos is not None and r["y"] - solo_montos["y"] <= 15:
-                r = {**r, "vals": dict(solo_montos["vals"]), "irr": set(solo_montos["irr"])}
-                solo_montos = None
-            else:
-                # tambien si la "glosa" es solo el rotulo de unidades ("MUS$ MUS$ ..."): los montos del
-                # inicio quedan a la altura de esa linea (diag de cobertura 03d: pagina sin bloque)
-                solo_montos = r if (clave is None and r["vals"] and (not g or RE_UNIDADES.fullmatch(g))) else None
-            # Fila reconocida sin montos ("Activo neto ... al 31 de diciembre") seguida de una
-            # sin nombre con montos ("Valor Cuota  25.506.525 ..."): los montos son de la primera.
-            if clave is None and r["vals"] and pendiente:
-                clave, r = pendiente[0], {**r, "glosa": pendiente[1] + " " + r["glosa"]}
-                g = norm(r["glosa"])
-            pendiente = (clave, r["glosa"]) if clave and not r["vals"] else None
-            if not r["vals"] or clave is None:
-                if b is None:
-                    encabezado.append(r["glosa"])
-                continue
-            if clave == "activo_neto":
-                cierre, inicio = bool(RE_CIERRE.search(g)), bool(RE_INICIO.search(g))
-                # Un bloque abierto sin ningun movimiento no era una apertura (cierre del bloque de
-                # la pagina anterior arriba de la pagina, por ejemplo): se descarta y esta fila abre.
-                # (solo si esa apertura se titulaba como cierre: hay plantillas donde la apertura sin fecha va
-                # seguida de "al 1 de enero" con los montos de aportes por un desfase de filas)
-                if (b is not None and not MOVIMIENTOS & set(b["filas"]) and not cierre
-                        and RE_CIERRE.search(norm(b["glosa_inicio"]))):
-                    b = None
-                # Abre cualquier fila de activo neto si no hay bloque: el saldo inicial tambien se
-                # titula "al 31 de diciembre de <anio anterior>" (muestra de cobertura). Salvo que
-                # venga justo despues de movimientos: es el cierre de un bloque cuyo inicio no se
-                # reconocio, no una apertura (texto espaciado: abria con el cierre y mezclaba periodos).
-                huerfano = cierre and ultima in MOVIMIENTOS | {"res_generico"}
-                ultima = clave
-                if b is None and huerfano:
-                    continue
-                if b is None:
-                    b = dict(pagina=p, n_cols=len(franjas), hay_total=hay_total, encabezado=encabezado,
-                             total_propio=columna_total(pg, franjas, y_fin, r["y"]),
-                             _pg=pg, _franjas=franjas, _y=r["y"],
-                             glosa_inicio=r["glosa"], glosa_cierre="", ocr=pg.get("origen") == "ocr",
-                             filas={"inicio": dict(r["vals"])}, irr={("inicio", k) for k in r["irr"]})
-                elif b is not None and (cierre or not inicio):
-                    b["filas"]["cierre"] = dict(r["vals"])
-                    b["irr"] |= {("cierre", k) for k in r["irr"]}
-                    b["glosa_cierre"] = r["glosa"]
-                    bloques.append(b)
-                    b, encabezado, y_fin = None, [], r["y"]
-                continue
-            ultima = clave
-            if b is None:
-                continue
-            if clave == "res_generico":
-                clave = "res_antes" if "res_antes" not in b["filas"] else "res_despues"
-            if clave == "dist_parte":
-                acc = b["filas"].setdefault("dist_partes", {})
-                for k, v in r["vals"].items():
-                    acc[k] = acc.get(k, 0) + v
-            else:
-                b["filas"].setdefault(clave, dict(r["vals"]))
-                b["irr"] |= {(clave, k) for k in r["irr"]}
+        bloques += _leer_pagina(pg, p)
     return unir_tablas_apiladas([m for b in bloques for x in partir_dos_periodos(b) for m in partir_lado_a_lado(x)])
 
 
@@ -565,7 +639,8 @@ def main():
                             "fechado_por": b.get("fechado_por", "texto"), "anio_texto": b.get("anio_texto"),
                             "tablas_unidas": b.get("tablas_unidas", False),
                             "lado_a_lado": b.get("lado_a_lado", False),
-                            "dos_periodos": b.get("dos_periodos", False)})
+                            "dos_periodos": b.get("dos_periodos", False),
+                            "cortos": b.get("cortos", False)})
             fila_bloque = filas_b[-1]
             ctx = "PeriodoActual" if col == "actual" else "PeriodoAnterior"
             xml_t = {k: v for (c, k), v in x.items() if c == ctx}
@@ -733,6 +808,7 @@ def main():
     print(f"  bloques de dos tablas apiladas (unidas): {int(bl['tablas_unidas'].sum())}")
     print(f"  bloques de dos periodos lado a lado (partidos): {int(bl['lado_a_lado'].sum())}")
     print(f"  bloques de fondos sin series, anio y anterior en 2 columnas (partidos): {int(bl['dos_periodos'].sum())}")
+    print(f"  bloques con columnas de montos chicos (variante cortos, suma mejor): {int(bl['cortos'].sum())}")
     print(f"  bloques confiables (todas las filas suman al Total y el Total cuadra): {bl['confiable'].mean():.1%}")
     print(f"  bloques cuyo Total coincide con el XML en >= 50% de las filas: {(bl['coincide_xml'] >= 0.5).mean():.1%}")
     print(f"  activo neto del ESF disponible (03c): {len(esf)} fondo-anio-columna")

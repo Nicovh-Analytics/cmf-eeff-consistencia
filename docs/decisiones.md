@@ -795,3 +795,37 @@ Diagnostico por causa de cada fondo-anio-columna sin bloque del ECP (`verificaci
 **Cobertura** (fondo-anio con bloque): actual 4.150 -> 4.331 (92,0 -> 96,0 %), anterior 3.862 -> 4.070 (85,6 -> 90,2 %). Hueco real restante: 300 en el actual y ~317 en el comparativo, repartido en plantillas sueltas (bloques de otro anio, paginas sin bloque).
 
 **Regresion**: 03b, 03c y 04b sin cambios; casos conocidos del 03d 18/18. 03d: +434 `probable_lectura_ocr` (tablas de series por OCR) y +26 `probable_error*`, todos de bloques nuevos: rotulo del aumento neto en tres fondo-anio escaneados de una AGF (exige igualdad exacta con inicio + aportes - rescates: un OCR con digitos errados no la produce) y continuidad del XML en un fondo-anio (el PDF cuadra). 04c: 978 -> 984 casos (rotulo +3, glosa desactualizada +2, error_XML +1); errores 370 -> 371.
+
+### D-L9. Suma de series del ECP: columnas por tabla y montos chicos (2026-11-17)
+
+**Origen.** Muestra de las senales de lectura (`verificacion/muestra_lectura.py`, 25 casos revisados en el PDF): las 8 de la suma de series (series != columna Total) eran del lector, no del documento. `verificacion/diag_suma_series.py` rehace la asignacion de montos a columnas (franjas) de `comun/lector_multicolumna` y mira si la diferencia es exactamente un monto perdido. De 4.038 senales `probable_lectura` de la suma de series, ~2.900 se explicaban por montos que el lector descartaba sin aviso:
+
+- **Choque**: dos montos de la misma linea en la misma franja; se guardaba el primero.
+- **Lejos**: monto a mas de la tolerancia de toda franja; se descartaba como nota.
+- **Nota**: entero de 1-2 digitos a mas de 5 pt de la franja, descartado como numero de nota aunque estuviera dentro de la tabla.
+
+Tres causas y tres arreglos:
+
+1. **Franjas por tabla** (`_por_tabla`). Las franjas se calculaban por pagina. En paginas con dos tablas apiladas (actual arriba, anterior abajo) con distinto numero de series o distinto ancho, la mezcla dejaba series de una tabla "lejos" y hacia chocar el Total de la otra con su ultima serie (un fondo-anio: el bloque del anio anterior tomaba una serie como Total). Si la pagina trae 2+ tablas, cada una se relee con sus propias franjas, desde el cierre de la anterior hasta su cierre; si la relectura no da exactamente un bloque, queda el de la pagina. Choques: 225 -> 22.
+2. **Columnas de montos chicos** (`filas_multicolumna(cortos=True)`). Una franja solo se formaba con montos de 3+ digitos o con separador de miles: una serie con montos de 1-2 digitos y guiones (fondos o series pequenas) nunca formaba columna y todos sus montos se perdian. La variante agrega franjas con enteros cortos alineados (3+ en la columna, no a la izquierda de la primera franja por mas de 1,5 pasos: ahi va la columna de notas) y solo descarta como nota un entero corto a la izquierda de la primera franja. **Aplicada sola empeoraba** (suma de series que no cuadra ~5.000 -> 8.018; bloques confiables 80% -> 63%; un Total perdido): agregaba columnas falsas. Por eso es una variante por pagina, que se usa solo si deja menos filas sin sumar al Total, con los mismos bloques, sin perder ningun Total y sin perder filas, montos por fila ni chequeos por columna (`_cubre`). La revision encontro ademas que los dias de las glosas ("al 1 de enero", "al 31 de diciembre") formaban una columna falsa en tablas anchas: borraban las series del inicio y del cierre y con ellas los chequeos que destapan rotulos (tres fondo-anio); un entero corto con un mes a su derecha se excluye de la variante (`_fechas_glosa`). 666 bloques usan la variante (`ecp_bloques.csv`: `cortos`).
+3. **Columnas antes del 25% del ancho.** En tablas de 15+ series las primeras columnas quedan a la izquierda del umbral donde empieza la busqueda de franjas y se perdian enteras (un fondo-anio: dos series). Se agregan hacia la izquierda solo si siguen el paso regular de las columnas, una a una.
+
+**Resultado** (contra la foto anterior al cambio):
+
+| | antes | despues |
+|---|---|---|
+| suma de series: `probable_lectura` | 3.665 | 1.735 |
+| suma de series: `observacion_inmaterial` | 972 | 610 |
+| suma de series que cuadra | 91,6% | 95,6% |
+| bloques confiables | 80,3% | 85,5% |
+| bloques con columna Total | 98,9% | 99,3% |
+| senales de lectura (todas las etapas) | 6.252 | 4.342 |
+| casos 04c / errores | 984 / 371 | 990 / 377 |
+
+03b, 03c y 04b sin cambios; casos conocidos del 03d 18/18.
+
+**Revision de los errores que cambian** (`verificacion/muestra_dl9.py` -> `revision_dl9.xlsx`, veredicto en el PDF; `verificacion/planilla_ecp_forma.py` arma cada ECP en forma de estado con la lectura antes / ahora y el XML). Una celda se identifica por sus montos y no por el numero de serie: una columna agregada a la izquierda corre los indices y 30 pares "nuevo / se va" eran la misma celda. Los errores nuevos son reales: rotulos del aumento neto en cuatro fondos de una AGF, tipeos de celda (dos fondos), un error del XML (un fondo-anio) y una distribucion de beneficios en cuotas descontada dos veces en el resultado del ECP y compensada en aportes (un fondo-anio y su comparativo: cierre = ESF; aportes del ECP = colocacion del EFE + la distribucion). Dos continuidades nuevas son fusiones sumadas al saldo inicial, reveladas en notas (dos fondo-anio): son criterio, no error (pendiente: `config/fusiones.csv` en el 04c).
+
+**Limite conocido.** Un tipeo que cambia el largo de un monto chico (un fondo-anio: el PDF imprime -4 por -14) es indistinguible de una lectura que pierde un digito y queda `probable_lectura`. Antes salia como error por una explicacion equivocada (una suma de aportes que fallaba porque no se leia una serie). Lo resolveria cruzar contra el XML por serie: si la correccion que cuadra la fila y la columna es la cifra del XML, el error es del PDF.
+
+Herramientas de revision: `herramientas/revisar.py` reconoce la planilla de lectura (columnas `etapa` y `causa`, teclas por causa); `06_ficha` ordena la hoja "ECP cruce" como el estado (antes, alfabetico del XML).
