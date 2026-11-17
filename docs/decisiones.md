@@ -829,3 +829,17 @@ Tres causas y tres arreglos:
 **Limite conocido.** Un tipeo que cambia el largo de un monto chico (un fondo-anio: el PDF imprime -4 por -14) es indistinguible de una lectura que pierde un digito y queda `probable_lectura`. Antes salia como error por una explicacion equivocada (una suma de aportes que fallaba porque no se leia una serie). Lo resolveria cruzar contra el XML por serie: si la correccion que cuadra la fila y la columna es la cifra del XML, el error es del PDF.
 
 Herramientas de revision: `herramientas/revisar.py` reconoce la planilla de lectura (columnas `etapa` y `causa`, teclas por causa); `06_ficha` ordena la hoja "ECP cruce" como el estado (antes, alfabetico del XML).
+
+### D-CU12. Fusiones presentadas en el saldo inicial: criterio, no error (2026-11-17)
+
+En la revision del D-L9 aparecieron quiebres de continuidad del ECP (inicio del anio != cierre del anio anterior, en el PDF y en el XML) que no son errores: el fondo absorbio a otro y presento el patrimonio absorbido **en el saldo inicial** del anio de la fusion, en vez de como movimiento en la fecha de la fusion, sin reexpresar el comparativo. La tabla cuadra por dentro; la diferencia entre anios es el patrimonio del fondo absorbido, serie por serie, y la fusion esta revelada en notas.
+
+- Un fondo-anio: fusion del primer trimestre, revelada en la Nota 1 (informacion general). Quiebre de varios millones, repartido en cuatro series; una serie sin cambio.
+- Un fondo-anio: fusion de fin de anio. Una serie del absorbido, sin cuotas a la fecha de la fusion, se presenta con su saldo inicial y sus movimientos del anio "solo con el proposito de mostrar los movimientos" (nota al pie del ECP); las demas series del absorbido entran como aportes. Quiebre = el saldo inicial de esa serie.
+- Un fondo-anio (caso conocido del 03d): fusion sumada al inicio.
+
+Es un criterio discutible: fusiones bajo control comun (misma AGF) no estan en NIIF 3; lo usual es incorporar desde la fecha de la fusion o reexpresar el comparativo. Sumar al 1 de enero sin reexpresar deja el ECP sin empalme y, si la fusion es a mitad de anio, imputa al absorbente movimientos del absorbido anteriores a la fusion. Se registra como **criterio** con la evidencia, no como error.
+
+**Implementacion.** `config.fusiones()` lee `verificacion/fusiones.csv` (rut, anio, fecha, absorbido, evidencia; fuera del repo porque identifica fondos, como los casos conocidos). En el 04c, un caso cuyas senales son todas de continuidad y cuyo fondo-anio esta en la lista pasa a tipo `criterio`, con la columna `evidencia`. Sin el archivo, esos quiebres quedan como error de continuidad. Agregar un fondo a la lista exige ver la nota en el PDF.
+
+**Pendiente.** Detectarlo sin lista: con la capa de notas (texto completo del PDF), buscar "absorbio / fusion" en la nota de informacion general de los fondo-anio con quiebre de continuidad en PDF y XML.

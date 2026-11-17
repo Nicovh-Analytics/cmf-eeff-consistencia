@@ -35,7 +35,7 @@ import sys
 
 import pandas as pd
 
-from config import CMF_HOME, casos_conocidos, umbral_materialidad
+from config import CMF_HOME, casos_conocidos, fusiones, umbral_materialidad
 
 P = CMF_HOME / "procesado"
 TOL = 2
@@ -574,6 +574,7 @@ def agrupar(t):
 
 
 def tipificar(t):
+    fus = fusiones()
     out = []
     for cid, g in t[t["caso_id"].notna()].groupby("caso_id"):
         otras = (g["fuente"] != "04").any()
@@ -599,11 +600,22 @@ def tipificar(t):
                     "glosa" if "glosa" in f else
                     "agregacion_xml" if "agregacion" in f else
                     "reexpresion" if "reexpresion" in f else "criterio" if "criterio" in f else "reclasificacion")
+        # Fusion presentada en el saldo inicial (D-CU12): el quiebre de continuidad del anio de la
+        # fusion es criterio revelado en notas, no error (vale solo para casos de continuidad)
+        evid = pd.NA
+        fz = fus.get((raiz["rut"], int(raiz["anio_doc"])))
+        # continuidad del 03d ("continuidad/total") o del 07: el inicio contra el cierre anterior del ECP
+        # ("ECP inicio total (act) = cierre (ant)") y contra el activo neto anterior del ESF
+        # ("ECP inicio (act) = ESF activo neto (ant)"): la fusion rompe las dos con la misma dif
+        if fz and g["linea"].astype(str).str.contains(r"continuidad|inicio.*=\s*(?:cierre|ESF activo neto)",
+                                                      regex=True).all():
+            tipo = "criterio"
+            evid = f"fusion {fz.get('fecha', '')} {fz.get('absorbido', '')}: {fz.get('evidencia', '')}".strip()
         out.append(dict(caso_id=cid, rut=raiz["rut"], anio_doc=raiz["anio_doc"], columna=raiz["columna"],
                         tipo=tipo, estado_raiz=raiz["estado"], linea_raiz=raiz["linea"], nivel=raiz["nivel"],
                         dif=g["adif"].max(), fuentes=",".join(sorted(set(g["fuente"]))),
                         n_senales=len(g), estados=",".join(sorted(set(g["estado"].dropna()))),
-                        lineas=",".join(sorted(set(g["linea"])))[:200],
+                        lineas=",".join(sorted(set(g["linea"])))[:200], evidencia=evid,
                         pagina=next((p for p in base.sort_values("nivel", key=lambda s: s.map(NIVEL))["pagina"]
                                      if pd.notna(p) and str(p) not in ("", "nan")), pd.NA)))
     return pd.DataFrame(out)

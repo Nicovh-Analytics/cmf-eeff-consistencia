@@ -37,3 +37,17 @@ def casos_conocidos(etapa: str) -> list:
         return []
     with open(ruta, encoding="utf-8") as f:
         return [(r["rut"], int(r["anio"]), r["esperado"]) for r in csv.DictReader(f) if r["etapa"] == etapa]
+
+# Fusiones de fondos cuyo patrimonio absorbido se presento en el saldo inicial del ECP (no como
+# movimiento del anio): el inicio no empalma con el cierre anterior y no es error sino criterio de
+# presentacion, revelado en notas (D-CU12). Verificadas a mano en el PDF; identifican fondos, por eso
+# viven fuera del repo: verificacion/fusiones.csv (columnas: rut, anio, fecha, absorbido, evidencia).
+# Sin el archivo esos quiebres quedan como error de continuidad.
+def fusiones() -> dict:
+    from pathlib import Path
+    import csv
+    ruta = Path(__file__).resolve().parent / "verificacion" / "fusiones.csv"
+    if not ruta.exists():
+        return {}
+    with open(ruta, encoding="utf-8") as f:
+        return {(r["rut"], int(r["anio"])): r for r in csv.DictReader(f)}
