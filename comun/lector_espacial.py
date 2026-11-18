@@ -309,8 +309,9 @@ def cargar_coords(rut, anio, pdf):
         d = d or {"pdf": pdf, "error": None, "paginas": {}}
         d["paginas"].update({p: normalizar_ocr(v) for p, v in o["paginas"].items()})
     if d:
-        # Ultimo digito de cada monto apilado en una palabra de la fila de arriba (una plantilla de
-        # 2023-2025; sus paginas espaciadas cuadraban 93,1% vs 97,7-100% en otras). Ver reparar_palabras.
+        # Paginas rearmadas desde los caracteres (03a, texto espaciado): no traen apilados y la
+        # reparacion confundia sus digitos sueltos con los de esa plantilla
         for pg in d["paginas"].values():
-            pg["palabras"] = reparar_apilados(pg["palabras"])
+            if not pg.get("rearmada"):
+                pg["palabras"] = reparar_apilados(pg["palabras"])
     return d

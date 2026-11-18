@@ -13,6 +13,10 @@ Por cada fondo-anio con paginas de estados detectadas por el 03:
     paginas que calzan poco; el lector decide por titulo cuales usar)
   - dedupe_chars(): elimina la negrita simulada por sobreimpresion
   - extract_words(): palabras con x0, x1 (bordes), top, bottom
+  - paginas "espaciadas" (>= 50% de las palabras con letras son de 1 caracter: el PDF posiciona
+    cada caracter por separado y extract_words corta entre letras y entre digitos de un mismo
+    monto): las palabras se rearman desde los caracteres (palabras_de_chars) y la pagina queda
+    marcada "rearmada". --espaciadas rehace solo esas paginas en los caches existentes.
   - guarda data/coords_pdf/{rut}/{anio}/{pdf}.json.gz
 
 Se salta lo ya extraido (salvo que el PDF sea mas nuevo que el cache). Si el cache
@@ -42,6 +46,8 @@ DIR_PROC = CMF_HOME / "procesado"
 DIR_COORDS = CMF_HOME / "coords_pdf"
 N_PROCESOS = max(1, (os.cpu_count() or 2) - 2)
 VERSION = 1
+UMBRAL_ESPACIADA = 0.5   # fraccion de palabras con letras que son de 1 caracter
+HUECO_LETRA = 1.5        # pt: entre letras de una palabra -1..+0,7; entre palabras 1,6+ (con blanco explicito)
 MAX_PAG = 15            # fondos sin paginas del 03: se extraen las primeras (los estados van al inicio)
 
 
@@ -57,6 +63,40 @@ def leer_cache(ruta):
     except (OSError, ValueError):
         return None
     return None if d.get("error") else d
+
+
+def espaciada(palabras):
+    """True si la mayoria de las palabras con letras son de 1 caracter (texto letra por letra)."""
+    alfa = [w for w in palabras if any(c.isalpha() for c in w["text"])]
+    return bool(alfa) and sum(len(w["text"]) == 1 for w in alfa) / len(alfa) >= UMBRAL_ESPACIADA
+
+
+def palabras_de_chars(chars, hueco=HUECO_LETRA, y_tol=3.0):
+    """Palabras desde los caracteres: por linea (top), en orden de x0; corta en un blanco o en un
+    hueco > hueco pt. En las paginas espaciadas los caracteres vienen bien posicionados y con los
+    blancos explicitos (diag_chars: "70.698", "Remuneraciones sociedad administradora"), pero
+    extract_words cortaba entre caracteres que se tocan o se solapan unas decimas."""
+    lineas = []
+    for c in sorted(chars, key=lambda c: (c["top"], c["x0"])):
+        if lineas and c["top"] - lineas[-1][0] <= y_tol:
+            lineas[-1][1].append(c)
+        else:
+            lineas.append([c["top"], [c]])
+    out = []
+    for _, cs in lineas:
+        cur = None
+        for c in sorted(cs, key=lambda c: c["x0"]):
+            if not c["text"].strip():
+                cur = None
+                continue
+            if cur is not None and c["x0"] - cur["x1"] <= hueco:
+                cur["text"] += c["text"]
+                cur["x1"] = max(cur["x1"], c["x1"])
+                cur["bottom"] = max(cur["bottom"], c["bottom"])
+            else:
+                cur = {"text": c["text"], "x0": c["x0"], "x1": c["x1"], "top": c["top"], "bottom": c["bottom"]}
+                out.append(cur)
+    return out
 
 
 def extraer(args):
@@ -75,8 +115,12 @@ def extraer(args):
                     continue
                 page = doc.pages[p - 1].dedupe_chars()
                 palabras = page.extract_words(x_tolerance=3, y_tolerance=3, keep_blank_chars=False)
+                rearmada = espaciada(palabras)
+                if rearmada:
+                    palabras = palabras_de_chars(page.chars)
                 salida["paginas"][str(p)] = {
                     "ancho": round(page.width, 1),
+                    **({"rearmada": True} if rearmada else {}),
                     # [texto, x0, x1, top, bottom]: listas en vez de dicts -> ~3x menos espacio
                     "palabras": [[w["text"], round(w["x0"], 1), round(w["x1"], 1),
                                   round(w["top"], 1), round(w["bottom"], 1)] for w in palabras],
@@ -93,7 +137,20 @@ def extraer(args):
     return "error" if salida["error"] else "ok"
 
 
+def espaciadas_pendientes(previo):
+    """Paginas de un cache que son espaciadas y todavia no se rearmaron."""
+    out = []
+    for p, pg in previo["paginas"].items():
+        if pg.get("rearmada"):
+            continue
+        alfa = [w for w in pg["palabras"] if any(c.isalpha() for c in w[0])]
+        if alfa and sum(len(w[0]) == 1 for w in alfa) / len(alfa) >= UMBRAL_ESPACIADA:
+            out.append(int(p))
+    return out
+
+
 def main():
+    rehacer = "--espaciadas" in sys.argv
     res = pd.read_csv(DIR_PROC / "cruce_resumen.csv", dtype={"rut": str, "paginas_estados": str})
     # tambien los que el 03 no ubico por cifras ("sin_paginas_de_estados"): las primeras
     # MAX_PAG paginas; el lector usa solo las que traen titulo o lineas tipicas de un estado
@@ -109,6 +166,12 @@ def main():
         if pd.notna(r.paginas_estados):
             paginas = paginas_lector(paginas)
         previo = None
+        if rehacer:             # solo las paginas espaciadas de caches ya extraidos
+            previo = leer_cache(destino) if destino.exists() else None
+            pend = espaciadas_pendientes(previo) if previo else []
+            if pend:
+                tareas.append((r.rut, r.anio, r.pdf, pend, previo))
+            continue
         if destino.exists() and destino.stat().st_mtime >= ruta_pdf.stat().st_mtime:
             previo = leer_cache(destino)    # ya extraido y el PDF no cambio: solo lo que falta
             if previo is not None:
