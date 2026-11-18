@@ -117,6 +117,16 @@ def main():
     modo_03c = "identidad" in df.columns or "chequeo" in df.columns   # 03c/03d: PDF y XML por termino
     modo_03d = "chequeo" in df.columns or modo_lect
     modo_comp = "pagina_t1" in df.columns       # 03e / 04b: PDF y XML de t y del comparativo de t+1
+    # cambios del 04c (verificacion/cambios_04c.py): el caso y sus senales (casos_unicos_senales.csv)
+    modo_04c = "estado_raiz" in df.columns and not modo_lect
+    sen_04c = {}
+    if modo_04c:
+        u = pd.read_csv(CMF_HOME / "procesado" / "casos_unicos.csv", dtype={"rut": str})
+        sn = CMF_HOME / "procesado" / "casos_unicos_senales.csv"
+        sn = pd.read_csv(sn, dtype={"rut": str}, low_memory=False) if sn.exists() else pd.DataFrame()
+        for r_ in u.itertuples():
+            k_ = (r_.rut, int(r_.anio_doc), str(r_.columna), str(r_.estado_raiz), str(r_.linea_raiz), str(r_.tipo))
+            sen_04c.setdefault(k_, []).append(r_.caso_id)
     subtotales, xml = {}, {}
     # 03d: cifras por serie del XML, para los casos de serie (el 03d no empareja nombres de series)
     ECP = {"inicio": "ActivoNetoAtribuibleALosParticipesAl01DeEnero", "aportes": "AportesDeCuotas",
@@ -229,6 +239,24 @@ def main():
                 chequeo, col = (str(r["que"]).split("/", 1) + [""])[:2]
                 if col != "total" or chequeo == "suma_series":
                     mostrar_series(r)
+        elif modo_04c:
+            print(f"\n[{pos + 1}/{len(casos)}] {r['rut']} {anio}  {r['estrato']} {r['tipo']} "
+                  f"{r['estado_raiz']}/{r['linea_raiz']} ({r['columna']})  pag. {r.get('pagina', '?')}")
+            print(f"  dif {monto(r.get('dif'))} | fuentes {r.get('fuentes', '')} | hoy: {r.get('ahora', '') or '-'}")
+            print(f"  lineas: {r.get('lineas', '')}")
+            ids = sen_04c.get((r["rut"], anio, str(r["columna"]), str(r["estado_raiz"]), str(r["linea_raiz"]),
+                               str(r["tipo"])), [])
+            if ids and len(sn):
+                cols_ = [c for c in ("fuente", "estado", "linea", "columna", "anio_doc", "dif", "clase", "detalle")
+                         if c in sn]
+                x_ = sn[sn["caso_id"].isin(ids)][cols_]
+                print("  senales del caso:")
+                for linea in x_.to_string(index=False, max_colwidth=70).splitlines():
+                    print("    " + linea)
+            elif r["estrato"] == "se_va":
+                print("  (ya no esta como error: ver 'hoy'; las senales de la foto no se guardan)")
+            if "04b" in str(r.get("fuentes", "")):
+                print("  04b: compara con el comparativo del anio siguiente (f = PDF t+1, vf = XML t+1)")
         elif modo_03c:
             que = r["identidad"] if "identidad" in r else f"ECP {r['chequeo']} / {r['col']}"
             print(f"\n[{pos + 1}/{len(casos)}] {r['rut']} {anio}  {que} ({r['columna']})"

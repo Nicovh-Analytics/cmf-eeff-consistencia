@@ -1,7 +1,8 @@
 """
 04b - Casos: agrupa las senales de un mismo error en un caso.
 
-Paso 1 del esquema de revision: solo las 12 lineas del 03e, donde cada monto tiene 4 versiones
+Paso 1 del esquema de revision: solo las lineas del 03e (12, mas los subtotales aumento neto y
+evolucion del efectivo del EFE, que no deciden el subtipo: DERIVADAS), donde cada monto tiene 4 versiones
 (PDF t, XML t, comparativo PDF t+1, comparativo XML t+1). El 03e deja en cada linea el patron
 (cual version no calza) y su diferencia. Aqui:
 
@@ -43,7 +44,7 @@ import sys
 
 import pandas as pd
 
-from config import CMF_HOME, RAIZ, casos_conocidos, umbral_materialidad
+from config import CMF_HOME, RAIZ, casos_conocidos, nombres_agf, umbral_materialidad
 
 DIR_PROC = CMF_HOME / "procesado"
 TOL_CASO = 2            # misma diferencia entre lineas de un caso (redondeo de cada linea)
@@ -51,7 +52,12 @@ TOL_CASO = 2            # misma diferencia entre lineas de un caso (redondeo de 
 ESTADO = {"total_activo": "ESF", "total_pasivo": "ESF", "activo_neto": "ESF", "efectivo": "ESF",
           "total_ingresos": "ERI", "total_gastos": "ERI", "utilidad_operacion": "ERI",
           "resultado_eri": "ERI", "resultado_eri_despues": "ERI",
-          "operacion": "EFE", "financiamiento": "EFE", "saldo_final": "EFE"}
+          "operacion": "EFE", "financiamiento": "EFE", "saldo_final": "EFE",
+          "aumento_neto": "EFE", "evolucion_efectivo": "EFE"}
+# Subtotales del EFE que el 03e compara desde que el 03b los ubica: acompanan a la linea que cambia
+# (operacion -> aumento neto) pero no deciden el subtipo; sin esto una reclasificacion contra
+# "efecto de diferencias de cambio" (1 linea) pasaba a error_linea / reclasificacion (2 lineas)
+DERIVADAS = {"aumento_neto", "evolucion_efectivo"}
 ANCLA = {"ESF": "activo_neto", "ERI": "resultado_eri", "EFE": "saldo_final"}
 DOCUMENTO = {"solo_pdf_t": "PDF t", "solo_pdf_t1": "PDF t+1 (comparativo)", "solo_xml_t": "XML t",
              "solo_xml_t1": "XML t+1 (comparativo)", "reexpresion": "PDF y XML t+1",
@@ -130,22 +136,23 @@ def tipificar(s, c):
     casos = []
     for cid, g in s[s["caso_id"].notna()].groupby("caso_id"):
         r0 = g.iloc[0]
-        lineas, estados = list(g["linea"]), sorted(set(g["estado"]))
+        lineas, estados = list(g["linea"]), sorted(set(g["estado"].dropna().astype(str)))
+        base = [l for l in lineas if l not in DERIVADAS] or lineas     # las que deciden el subtipo
         if any(ANCLA[e] in lineas for e in estados):
             tipo = "error_total"
         elif g["no_suma"].any():
             tipo = "error_suma"
         else:
             ok = [ancla_ok(r0.rut, r0.anio_t, e) for e in estados]
-            por_estado = g.groupby("estado").size()
-            esf_par = {"total_activo", "total_pasivo"} <= set(lineas)
+            por_estado = g[g["linea"].isin(base)].groupby("estado").size()
+            esf_par = {"total_activo", "total_pasivo"} <= set(base)
             if None in ok:
                 tipo = "sin_ancla"
             elif not all(ok):
                 tipo = "error_linea"            # el ancla tiene su propia diferencia (otro caso)
             elif (por_estado >= 2).any() and ("ESF" not in estados or esf_par):
                 tipo = "reclasificacion"
-            elif estados == ["EFE"] and len(lineas) == 1:
+            elif estados == ["EFE"] and len(base) == 1 and base[0] in ("operacion", "financiamiento"):
                 tipo = "reclasificacion_dc"
             else:
                 tipo = "error_linea"
@@ -219,12 +226,11 @@ def concentracion(casos):
     Agrupa por rut_agf (la misma AGF aparece con nombres distintos segun el anio)."""
     enc = pd.read_csv(DIR_PROC / "encabezados.csv", dtype={"rut": str, "rut_agf": str})
     if "rut_agf" in enc:
-        enc = enc[enc["es_ultimo_envio"]][["rut", "anio", "rut_agf", "nombre_agf"]].rename(
-            columns={"anio": "anio_t", "nombre_agf": "nombre_ult"})
+        enc = enc[enc["es_ultimo_envio"]][["rut", "anio", "rut_agf"]].rename(columns={"anio": "anio_t"})
         casos = casos.merge(enc, on=["rut", "anio_t"], how="left")
+        # nombre canonico por rut_agf (config.nombres_agf: el mas reciente con forma de razon social)
+        casos["nombre_agf"] = casos["rut_agf"].map(nombres_agf()).fillna(casos["nombre_agf"])
         casos["rut_agf"] = casos["rut_agf"].fillna(casos["nombre_agf"])
-        ultimo = casos.sort_values("anio_t").groupby("rut_agf")["nombre_ult"].last()
-        casos["nombre_agf"] = casos["rut_agf"].map(ultimo).fillna(casos["nombre_agf"])
     for nombre, pats in (("criterio (PDF vs XML en ambos anios)", ["criterio"]),
                          ("lado XML (solo_xml_t, solo_xml_t1)", ["solo_xml_t", "solo_xml_t1"])):
         x = casos[casos["patron"].isin(pats)]

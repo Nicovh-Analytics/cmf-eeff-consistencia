@@ -51,3 +51,18 @@ def fusiones() -> dict:
         return {}
     with open(ruta, encoding="utf-8") as f:
         return {(r["rut"], int(r["anio"])): r for r in csv.DictReader(f)}
+
+# Nombre canonico de cada AGF (por rut_agf): el mas reciente que parece razon social de AGF.
+# Hay envios con valores genericos en el campo del nombre y AGF que cambian de nombre entre
+# anios (compras, fusiones): un solo nombre por rut.
+def nombres_agf() -> dict:
+    import re
+    import pandas as pd
+    enc = pd.read_csv(CMF_HOME / "procesado" / "encabezados.csv", dtype={"rut_agf": str},
+                      usecols=["rut_agf", "anio", "nombre_agf"]).dropna()
+    valido = enc["nombre_agf"].str.contains(r"ADMINISTRADORA|ADM\.? ?GRAL|\bAGF\b|ASSET|FONDOS", case=False, regex=True)
+    out = {}
+    for rut, g in enc.sort_values("anio").groupby("rut_agf"):
+        v = g[valido.loc[g.index]]
+        out[rut] = (v if len(v) else g)["nombre_agf"].iloc[-1]
+    return out

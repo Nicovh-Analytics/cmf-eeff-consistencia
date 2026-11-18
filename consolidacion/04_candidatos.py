@@ -51,7 +51,7 @@ from config import CMF_HOME, RAIZ
 
 import pandas as pd
 
-from config import umbral_materialidad
+from config import nombres_agf, umbral_materialidad
 
 DIR_PROC = CMF_HOME / "procesado"
 
@@ -489,7 +489,9 @@ def main():
     cand[columnas].to_csv(DIR_PROC / "candidatos.csv", index=False, encoding="utf-8-sig")
 
     # --- Por AGF, como tasa ---
-    nombre = ok.groupby("rut_agf")["nombre_agf"].agg(lambda s: s.value_counts().index[0])
+    # nombre canonico por rut_agf (config.nombres_agf: el mas reciente con forma de razon social de AGF)
+    nombre = ok["rut_agf"].dropna().drop_duplicates().to_frame().assign(
+        n=lambda d: d["rut_agf"].map(nombres_agf())).set_index("rut_agf")["n"]
     por_agf = ok.groupby("rut_agf")["clase"].value_counts().unstack(fill_value=0)
     por_agf["evaluados"] = por_agf.sum(axis=1)
     por_agf["tasa_candidatos_pct"] = (100 * por_agf.get("candidato", 0)

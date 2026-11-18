@@ -56,7 +56,7 @@ from comun.secciones import asignar_secciones
 
 import pandas as pd
 
-from config import casos_conocidos
+from config import casos_conocidos, nombres_agf
 
 BASE_DIR = Path(__file__).resolve().parent
 DIR_PROC = CMF_HOME / "procesado"
@@ -492,7 +492,8 @@ def main():
     pd.concat([det_a, det_b], ignore_index=True).to_csv(
         DIR_PROC / "continuidad_detalle.csv", index=False, encoding="utf-8-sig")
 
-    nombre = res.groupby("rut_agf")["nombre_agf"].agg(lambda s: s.value_counts().index[0])
+    # nombre canonico por rut_agf (config.nombres_agf: el mas reciente con forma de razon social de AGF)
+    nombre = pd.Series(nombres_agf())
     por_agf = res.groupby("rut_agf")["clase"].value_counts().unstack(fill_value=0)
     por_agf["evaluados"] = por_agf.sum(axis=1)
     for c in ("modificado", "modificado_saldos", "subtotal_vacio"):
