@@ -15,7 +15,13 @@ con el XML de ambos años para saber que documento cambio:
                             los dos documentos reexpresan (buscar nota)
   otro                      ninguna de las anteriores (PDF y XML distintos en ambos años, etc.)
   sin_xml                   falta el XML de alguna de las cuatro cifras
-  lectura                   alguna de las dos lecturas del PDF es de OCR o se ubico solo por glosa
+  lectura                   alguna de las dos lecturas del PDF es de OCR o se ubico solo por glosa,
+                            o el PDF difiere con una huella de lectura (monto en 0, un digito de mas)
+
+Monto en 0 en el PDF: es lectura nuestra (columna o fila no leida) SALVO que la misma columna del
+mismo estado se haya leido bien en otras lineas (>= MIN_LEIDAS con monto y = XML). Entonces el
+subtotal viene impreso sin cifra: omision del PDF, no lectura (revision 04c: tres errores reales
+perdidos por el filtro de cero). Columna omision_pdf.
 
 Lineas: los 6 subtotales del 03b (estructura_efe.csv) y las 6 lineas del 03c (lineas_03c.csv).
 No lee PDF: usa lo que ya ubicaron el 03b y el 03c.
@@ -57,6 +63,28 @@ def igual(a, b):
 
 
 ESF_2011 = {"total_activo", "total_pasivo", "activo_neto", "efectivo"}
+ESTADO = {"total_activo": "ESF", "total_pasivo": "ESF", "activo_neto": "ESF", "efectivo": "ESF",
+          "total_ingresos": "ERI", "total_gastos": "ERI", "utilidad_operacion": "ERI",
+          "resultado_eri": "ERI", "resultado_eri_despues": "ERI",
+          "operacion": "EFE", "financiamiento": "EFE", "aumento_neto": "EFE", "evolucion_efectivo": "EFE",
+          "saldo_final": "EFE"}
+MIN_LEIDAS = 2
+LEIDAS = set()      # (rut, anio, columna, estado) con la columna bien leida (columnas_leidas)
+
+
+def columnas_leidas(t):
+    """Documento-columna-estado cuyo PDF se leyo bien: >= MIN_LEIDAS lineas con monto (no 0), sin
+    duda de lectura e iguales al XML."""
+    ok = (t["pdf"].abs() > TOL) & ((t["pdf"].abs() - t["xml"].abs()).abs() <= TOL) & ~t["dudosa"]
+    x = t[ok].assign(estado=t["linea"].map(ESTADO))
+    n = x.groupby(["rut", "anio", "columna", "estado"]).size()
+    return set(n[n >= MIN_LEIDAS].index)
+
+
+def omision_pdf(pdf, xml, clave):
+    """El PDF trae 0 (o nada) donde el XML tiene monto, y esa columna del estado se leyo bien:
+    subtotal impreso sin cifra, no lectura."""
+    return pd.notna(pdf) and pd.notna(xml) and abs(pdf) <= TOL < abs(xml) and clave in LEIDAS
 
 
 def lectura_probable(pdf, xml):
@@ -106,14 +134,17 @@ def clasificar(r):
         return "sin_xml"
     xml_igual = igual(r.xml_t, r.xml_t1)
     pdf_t_ok, pdf_t1_ok = igual(r.pdf_t, r.xml_t), igual(r.pdf_t1, r.xml_t1)
+    est = ESTADO.get(r.linea)
     if xml_igual and not pdf_t_ok and pdf_t1_ok:
         # 2011: el ESF trae la columna del balance de apertura y algunas plantillas no se reconocen
         # (limitacion del lector espacial): la diferencia del PDF 2011 puede ser nuestra
-        if lectura_probable(r.pdf_t, r.xml_t) or (r.anio == 2011 and r.linea in ESF_2011):
+        if ((lectura_probable(r.pdf_t, r.xml_t) and not omision_pdf(r.pdf_t, r.xml_t, (r.rut, r.anio, "actual", est)))
+                or (r.anio == 2011 and r.linea in ESF_2011)):
             return "lectura"
         return "pdf_corregido_despues"
     if xml_igual and pdf_t_ok and not pdf_t1_ok:
-        if lectura_probable(r.pdf_t1, r.xml_t1):
+        if (lectura_probable(r.pdf_t1, r.xml_t1)
+                and not omision_pdf(r.pdf_t1, r.xml_t1, (r.rut, r.anio + 1, "anterior", est))):
             return "lectura"
         return "pdf_error_comparativo"
     if not xml_igual and pdf_t_ok and pdf_t1_ok:
@@ -123,6 +154,7 @@ def clasificar(r):
 
 def main():
     t = leer_lineas()
+    LEIDAS.update(columnas_leidas(t))
     act = t[t["columna"] == "actual"].drop(columns="columna")
     ant = t[t["columna"] == "anterior"].drop(columns="columna").assign(anio=lambda d: d["anio"] - 1)
     c = act.merge(ant, on=["rut", "anio", "linea"], suffixes=("_t", "_t1"))
@@ -131,6 +163,10 @@ def main():
     c = c.merge(enc, on=["rut", "anio"], how="left")
     c["dif"] = c["pdf_t1"].abs() - c["pdf_t"].abs()
     c["clase"] = [clasificar(r) for r in c.itertuples()]
+    c["omision_pdf"] = [(r.clase in ("pdf_corregido_despues", "pdf_error_comparativo")) and (
+        omision_pdf(r.pdf_t, r.xml_t, (r.rut, r.anio, "actual", ESTADO.get(r.linea)))
+        or omision_pdf(r.pdf_t1, r.xml_t1, (r.rut, r.anio + 1, "anterior", ESTADO.get(r.linea))))
+        for r in c.itertuples()]
     c["patron"], c["dif_patron"] = zip(*[patron(r) for r in c.itertuples()])
     inm = (c["clase"] != "cuadra") & (c["clase"] != "lectura") & \
           (c["dif"].abs() <= c["moneda"].map(umbral_materialidad))
@@ -153,6 +189,13 @@ def main():
             print(f"  {r.rut:>6} {r.anio_t}->{r.anio_t + 1}  {r.linea:<22} PDF {r.pdf_t:>16,.0f} -> {r.pdf_t1:>16,.0f}"
                   f"   XML {r.xml_t if pd.notna(r.xml_t) else float('nan'):>16,.0f} -> "
                   f"{r.xml_t1 if pd.notna(r.xml_t1) else float('nan'):>16,.0f}")
+
+    om = c[c["omision_pdf"]].sort_values(["rut", "anio_t"])
+    print(f"\nsubtotal impreso sin cifra (0 en el PDF con la columna del estado bien leida; antes "
+          f"'lectura'): {len(om)} en {om[['rut', 'anio_t']].drop_duplicates().shape[0]} fondo-anio, primeros 25:")
+    for r in om.head(25).itertuples():
+        print(f"  {r.rut:>6} {r.anio_t}->{r.anio_t + 1}  {r.linea:<22} {r.clase:<22} PDF {r.pdf_t:>14,.0f} -> "
+              f"{r.pdf_t1:>14,.0f}   XML {r.xml_t:>14,.0f}")
 
     print("\nvalidacion con casos conocidos:")
     for rut, anio, esperado in casos_conocidos("03e"):

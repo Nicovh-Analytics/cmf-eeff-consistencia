@@ -18,7 +18,8 @@ evolucion del efectivo del EFE, que no deciden el subtipo: DERIVADAS), donde cad
                               calza (operacion <-> financiamiento, activo <-> pasivo...)
        reclasificacion_dc     EFE: una sola linea (operacion o financiamiento) cambia, el saldo
                               final calza y el subtotal suma: el monto fue a/desde "efecto de
-                              diferencias de cambio", que no esta entre las 12 lineas
+                              diferencias de cambio", que no esta entre las 12 lineas; o solo
+                              cambia el aumento neto (la diferencia de cambio dentro o fuera de el)
        error_linea            una linea cambia y el ancla calza (fuera del caso anterior)
        sin_ancla              el ancla no tiene sus 4 versiones o es dudosa: no se puede decidir
        omision                todas las lineas del caso vienen en 0 en el documento distinto
@@ -152,7 +153,11 @@ def tipificar(s, c):
                 tipo = "error_linea"            # el ancla tiene su propia diferencia (otro caso)
             elif (por_estado >= 2).any() and ("ESF" not in estados or esf_par):
                 tipo = "reclasificacion"
-            elif estados == ["EFE"] and len(base) == 1 and base[0] in ("operacion", "financiamiento"):
+            # Solo el aumento neto cambia (operacion, financiamiento y saldo final calzan): la diferencia
+            # de cambio va dentro del aumento en un documento y aparte en el otro (revision 04c: el
+            # XML la informa y el PDF no, o al reves). Presentacion, no error.
+            elif estados == ["EFE"] and ((len(base) == 1 and base[0] in ("operacion", "financiamiento"))
+                                         or set(lineas) == {"aumento_neto"}):
                 tipo = "reclasificacion_dc"
             else:
                 tipo = "error_linea"

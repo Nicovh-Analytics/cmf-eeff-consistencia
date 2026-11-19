@@ -59,3 +59,30 @@ def reparar_apilados(palabras, ancho_max=1.8, tol_x=3.0, salto_max=30.0):
             n[0], n[1], n[2] = d, a[1], a[2]
             out.append(type(w)(n) if isinstance(w, tuple) else n)
     return out
+
+RE_ABRE = re.compile(r"\(\d{1,3}(?:\.\d{3})*")              # "(10.865.439": negativo sin su ")"
+
+
+def reparar_parentesis_partido(palabras, salto_max=16.0, tol_x=6.0):
+    """Monto negativo que no cupo en la celda: "(10.865.439" en una linea y la ")" sola en la
+    linea de abajo, pegada a su borde derecho (revision 04c: el renglon quedaba sin monto y el 03e
+    lo tomaba como subtotal impreso sin cifra). Se une en una palabra en la linea de la ")", que es
+    la del renglon (la glosa y el monto de la otra columna estan ahi)."""
+    cierres = [i for i, w in enumerate(palabras) if w[0] == ")"]
+    if not cierres:
+        return palabras
+    usados, nuevas = set(), {}
+    for i, w in enumerate(palabras):
+        if not RE_ABRE.fullmatch(w[0]):
+            continue
+        cand = [j for j in cierres if j not in usados and 0 < palabras[j][3] - w[3] <= salto_max
+                and abs(palabras[j][1] - w[2]) <= tol_x]
+        if not cand:
+            continue
+        j = min(cand, key=lambda j: palabras[j][3] - w[3])
+        c = palabras[j]
+        usados |= {i, j}
+        nuevas[i] = [w[0] + ")", w[1], max(w[2], c[2]), c[3], c[4] if len(c) > 4 else c[3]]
+    if not nuevas:
+        return palabras
+    return [nuevas.get(i, w) for i, w in enumerate(palabras) if i not in usados or i in nuevas]

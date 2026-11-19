@@ -843,3 +843,40 @@ Es un criterio discutible: fusiones bajo control comun (misma AGF) no estan en N
 **Implementacion.** `config.fusiones()` lee `verificacion/fusiones.csv` (rut, anio, fecha, absorbido, evidencia; fuera del repo porque identifica fondos, como los casos conocidos). En el 04c, un caso cuyas senales son todas de continuidad y cuyo fondo-anio esta en la lista pasa a tipo `criterio`, con la columna `evidencia`. Sin el archivo, esos quiebres quedan como error de continuidad. Agregar un fondo a la lista exige ver la nota en el PDF.
 
 **Pendiente.** Detectarlo sin lista: con la capa de notas (texto completo del PDF), buscar "absorbio / fusion" en la nota de informacion general de los fondo-anio con quiebre de continuidad en PDF y XML.
+
+### D-L10. Paginas con texto espaciado: palabras rearmadas desde los caracteres (2026-11-18)
+
+**Origen.** Revision de lectura del 04c: en algunas plantillas el PDF posiciona cada caracter por separado y `extract_words` corta entre letras de una glosa y entre digitos de un mismo monto ("7 0 . 6 9 8"). El lector perdia montos y rotulos de esas paginas. `verificacion/diag_chars.py` mostro que los caracteres vienen bien posicionados y con los blancos explicitos: el problema era solo la agrupacion en palabras (caracteres de una misma palabra separados entre -1 y +0,7 pt; entre palabras, 1,6 pt o mas y con blanco).
+
+**Decision.** En el 03a, una pagina es "espaciada" si al menos el 50% de sus palabras con letras tiene un solo caracter. En esas paginas las palabras se rearman desde `page.chars`: por linea (top +-3 pt), en orden de x, cortando en un blanco explicito o en un hueco mayor a 1,5 pt. La pagina queda marcada `rearmada`. `--espaciadas` rehace solo esas paginas en los caches existentes, sin volver a extraer el resto.
+
+En el lector, la reparacion de digitos apilados (`reparar_apilados`) no se aplica a las paginas rearmadas: no traen apilados y la reparacion confundia sus digitos sueltos con los de esa plantilla.
+
+**Verificacion.** Errores del 04c que aparecen o se van contra la foto `antes_espaciado` (`verificacion/cambios_04c.py`), revisados en el PDF. Los rotulos del ECP que aparecen al leer bien las paginas espaciadas (cinco fondo-anio) son el patron ya conocido: el renglon de aumento neto por transacciones imprime inicio + aportes - rescates. Confirmados en el PDF; dan dos filas por serie (transacciones y evolucion) y un caso `rotulo` por fondo-anio en el 04c.
+
+### D-CU13. 04b: lineas derivadas del EFE y un nombre por AGF (2026-11-18)
+
+**Lineas derivadas.** El 03e agrego al EFE el aumento neto y la evolucion del efectivo. El 04b no las tenia en su mapa de estados y fallaba con estado vacio; ahora son del EFE. Son **derivadas**: se mueven cada vez que se mueve operacion o financiamiento, asi que no deciden el subtipo. El subtipo se decide con las lineas no derivadas del caso (`base`), o con todas si el caso solo tiene derivadas. Sin esto, un error de una linea de flujo contaba como tres lineas y salia `error_total` en vez de `error_linea` o `reclasificacion_dc`.
+
+`reclasificacion_dc` (EFE, una sola linea de flujo cambia y el saldo no) se extiende al caso en que la unica linea que cambia es el aumento neto.
+
+**Un nombre por AGF.** `config.nombres_agf()` da un nombre por rut de AGF: el del ultimo anio cuyo nombre parece de AGF (ADMINISTRADORA, AGF, ASSET, FONDOS...), o el ultimo si ninguno. Hay envios con valores genericos en el campo del nombre y AGF que cambian de nombre entre anios (compras, fusiones); antes una misma AGF salia en varias filas de los resumenes por AGF del 04, el 04b y el 07, y sus casos se repartian entre ellas.
+
+**Revision.** `herramientas/revisar.py` agrega el modo 04c: muestra los campos del caso y sus senales (`casos_unicos_senales.csv`).
+
+### D-CU14. 03e: subtotal impreso sin cifra (omision del PDF) y montos negativos partidos (2026-11-18)
+
+**Origen.** Revision del 04c: tres errores reales del PDF se perdian por el filtro de cero del 03e. Un 0 en el PDF donde el XML tiene monto se mandaba siempre a lectura, porque casi siempre es una columna o fila que el lector no leyo. Pero a veces el PDF imprime el subtotal en blanco o con "-".
+
+**Decision.** Si en el mismo documento, columna y estado hay al menos dos lineas (`MIN_LEIDAS`) leidas con monto e iguales al XML, la columna se leyo bien y el 0 es un subtotal impreso sin cifra: `omision_pdf`, no lectura. Claves: (rut, anio, actual, estado) para el PDF t y (rut, anio+1, anterior, estado) para el comparativo del PDF t+1. En el 04b queda como `pdf/omision`, en el documento y la columna donde falta la cifra (aunque se detecte comparando con el anio siguiente).
+
+**Resultado.** 15 subtotales sin cifra en 15 fondo-anio; 04b +15 casos `pdf/omision`. Verificados en el PDF:
+- Dos fondo-anio: flujo neto de financiamiento sin cifra.
+- Un fondo-anio: resultado antes de distribucion impreso "-" en el actual; distribucion "-" y resultado despues de distribucion 1.915.995 (los montos del renglon "antes" van en la segunda linea de su rotulo y los del "despues" en la primera).
+- Un fondo-anio, falso negativo conocido del 03e, ahora se detecta.
+
+**Falso positivo y reparacion del lector.** Un fondo-anio: un monto negativo que no cupo en la celda, "(10.865.439" en la linea de arriba y ")" sola en la linea del renglon. El lector descartaba ambas piezas y la regla tomaba el renglon como subtotal sin cifra. Se corrige en la lectura, no en la regla: `reparar_parentesis_partido` (`comun/reparar_palabras`) une un "(digitos" sin cierre con una ")" sola hasta 16 pt mas abajo y pegada a su borde derecho (+-6 pt), en la linea de la ")". Se aplica a todas las paginas, tambien a las rearmadas.
+
+Efecto: ese fondo-anio cuadra; 03b -1 `probable_lectura` y -1 `revisar_linea_faltante`; 03d -3 `probable_lectura` en evolucion y -3 en suma de series, y un fondo-anio sale de `probable_error_pdf` (evolucion, anterior, dif 12.147): era lectura, los rescates "(28.652" partidos; con el monto la evolucion cuadra. Sin errores nuevos.
+
+**Limites.** La regla depende de que la columna se haya leido bien en otras lineas del mismo estado. Un fondo-anio con subtotal en blanco en un renglon ubicado solo por glosa sigue como lectura.
