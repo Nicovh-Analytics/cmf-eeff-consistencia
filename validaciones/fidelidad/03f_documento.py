@@ -26,8 +26,15 @@ Revision (2026-11-11): 4 xml_periodo_desfasado (3 de un mismo anio; el XML trae 
 periodo y las cifras del anterior), 1 xml_no_corresponde y 1 pdf_no_corresponde (el PDF es el de otro
 fondo de la misma AGF), contra 4.469 normales; los 6 confirmados a mano.
 
-Lee:      renglones_pdf.csv (03b), encabezados.csv, cuentas.csv
+PDF sin estados: hay PDF pero ningun estado ubicado (ni subtotales del 03b, ni lineas del
+03c, ni bloques del ECP del 03d): solo notas (precision 04c: un PDF 2011 con solo notas explicativas
+salia como diferencias PDF/XML por linea). Se lista aparte para revisar: con OCR ilegible pasa lo
+mismo sin que el documento este incompleto (columna ocr).
+
+Lee:      renglones_pdf.csv (03b), encabezados.csv, cuentas.csv, estructura_efe.csv (03b),
+          lineas_03c.csv (03c), ecp_bloques.csv (03d), cruce_resumen.csv
 Escribe:  data/procesado/documento_periodo.csv   1 fila por fondo-anio con normal < 0,4
+          data/procesado/pdf_sin_estados.csv     PDF sin ningun estado ubicado
 """
 import bisect
 import sys
@@ -77,6 +84,30 @@ def tipo_de(f):
     return "sin_explicar"
 
 
+def verdad(s):
+    return s.astype(str).str.strip().str.lower().isin(["true", "1", "si", "sí", "1.0"])
+
+
+def sin_estados(l):
+    """Fondo-anio con PDF y ningun estado ubicado por el 03b, el 03c ni el 03d."""
+    est = pd.read_csv(P / "estructura_efe.csv", dtype={"rut": str}, usecols=["rut", "anio", "ubicado", "pagina_ocr"])
+    l3c = pd.read_csv(P / "lineas_03c.csv", dtype={"rut": str}, usecols=["rut", "anio", "pdf"])
+    ecp = pd.read_csv(P / "ecp_bloques.csv", dtype={"rut": str}, usecols=["rut", "anio"])
+    con = (set(map(tuple, est[verdad(est["ubicado"])][["rut", "anio"]].values))
+           | set(map(tuple, l3c[l3c["pdf"].notna()][["rut", "anio"]].values))
+           | set(map(tuple, ecp[["rut", "anio"]].values)))
+    # base: todos los fondo-anio con PDF (un PDF sin paginas de estados puede no tener renglones del 03b)
+    cr = pd.read_csv(P / "cruce_resumen.csv", dtype={"rut": str},
+                     usecols=["rut", "anio", "pdf", "pdf_paginas", "paginas_estados", "pct_encontrado"])
+    cr = cr[cr["pdf"].notna()].drop(columns="pdf")
+    d = cr[[(r, a) not in con for r, a in zip(cr["rut"], cr["anio"])]]
+    n = l.groupby(["rut", "anio"]).size().rename("renglones").reset_index()
+    ocr = est.assign(o=est["pagina_ocr"].notna() & (est["pagina_ocr"].astype(str) != "")) \
+             .groupby(["rut", "anio"])["o"].any().rename("ocr").reset_index()
+    d = d.merge(n, on=["rut", "anio"], how="left").merge(ocr, on=["rut", "anio"], how="left")
+    return d.assign(renglones=d["renglones"].fillna(0).astype(int))
+
+
 def main():
     l = pd.read_csv(P / "renglones_pdf.csv", dtype={"rut": str}, usecols=["rut", "anio", "actual", "anterior", "metodo"])
     l = l[l["metodo"] != "encabezado"]
@@ -117,6 +148,13 @@ def main():
     if len(d):
         print("\n" + d.sort_values(["tipo", "rut", "anio"]).round(2).to_string(index=False))
     print(f"\nsalida: {P / 'documento_periodo.csv'}")
+
+    se = sin_estados(l)
+    se.to_csv(P / "pdf_sin_estados.csv", index=False, encoding="utf-8-sig")
+    print(f"\nPDF sin ningun estado ubicado (03b, 03c, 03d): {len(se)}  (con OCR: {int(se['ocr'].fillna(False).sum())})")
+    if len(se):
+        print(se.sort_values(["anio", "rut"]).to_string(index=False))
+    print(f"salida: {P / 'pdf_sin_estados.csv'}")
     return 0
 
 
