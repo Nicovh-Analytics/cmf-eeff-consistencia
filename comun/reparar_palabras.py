@@ -86,3 +86,31 @@ def reparar_parentesis_partido(palabras, salto_max=16.0, tol_x=6.0):
     if not nuevas:
         return palabras
     return [nuevas.get(i, w) for i, w in enumerate(palabras) if i not in usados or i in nuevas]
+
+RE_GRUPO_SUELTO = re.compile(r"\.\d{3}(?:\.\d{3})*\)?")       # ".468" / ".468)": no es un monto
+RE_NUM_IZQ = re.compile(r"\(?\d{1,3}(?:\.\d{3})*")             # "46.755" / "(46.755"
+
+
+def reparar_miles_partido(palabras, hueco_max=8.0, tol_y=2.0):
+    """Monto impreso con un espacio antes de un grupo de miles ("46.755 .468"): extract_words da dos
+    palabras y el lector tomaba ".468" como el monto (revision de precision del 04c). Un grupo
+    suelto con punto inicial no es un monto valido; se une al numero de su izquierda en la misma
+    linea (+-tol_y pt) si estan a menos de hueco_max pt."""
+    sueltos = [j for j, w in enumerate(palabras) if RE_GRUPO_SUELTO.fullmatch(w[0])]
+    if not sueltos:
+        return palabras
+    nums = [i for i, w in enumerate(palabras) if RE_NUM_IZQ.fullmatch(w[0])]
+    quitar, nuevas = set(), {}
+    for j in sueltos:
+        d = palabras[j]
+        cand = [i for i in nums if i not in nuevas and abs(d[3] - palabras[i][3]) <= tol_y
+                and 0 <= d[1] - palabras[i][2] <= hueco_max]
+        if not cand:
+            continue
+        i = min(cand, key=lambda i: d[1] - palabras[i][2])
+        w = palabras[i]
+        nuevas[i] = [w[0] + d[0], w[1], d[2], *w[3:]]
+        quitar.add(j)
+    if not nuevas:
+        return palabras
+    return [nuevas.get(i, w) for i, w in enumerate(palabras) if i not in quitar]

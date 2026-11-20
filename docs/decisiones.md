@@ -880,3 +880,33 @@ En el lector, la reparacion de digitos apilados (`reparar_apilados`) no se aplic
 Efecto: ese fondo-anio cuadra; 03b -1 `probable_lectura` y -1 `revisar_linea_faltante`; 03d -3 `probable_lectura` en evolucion y -3 en suma de series, y un fondo-anio sale de `probable_error_pdf` (evolucion, anterior, dif 12.147): era lectura, los rescates "(28.652" partidos; con el monto la evolucion cuadra. Sin errores nuevos.
 
 **Limites.** La regla depende de que la columna se haya leido bien en otras lineas del mismo estado. Un fondo-anio con subtotal en blanco en un renglon ubicado solo por glosa sigue como lectura.
+
+### D-CU15. Muestra de precision de los errores del 04c y lo que corrigio (2026-11-19)
+
+**Origen.** Las revisiones anteriores fueron dirigidas (diffs, casos raros, AGF puntuales): no habia una medida de cuanto creerle al conteo de errores. `verificacion/muestra_precision.py`: muestra aleatoria estratificada por tipo de error (semilla fija, minimo 5 por estrato, resto proporcional), 60 casos de 381, revisados en el PDF y el XML. Confirmado = el error existe en el documento que dice el tipo.
+
+**Resultado de la muestra (antes de corregir).** Precision 69% (+-11) con el documento correcto; 73% contando todo error real.
+
+| tipo | errores | muestra | confirmados | causa de lo no confirmado |
+|---|---|---|---|---|
+| error_PDF | 236 | 28 | 20 | 5 lectura, 3 presentacion |
+| error_PDF+XML | 5 | 5 | 0 | las 5 son fusiones |
+| error_PDF/XML | 14 | 6 | 0 | lectura o presentacion distinta PDF/XML |
+| error_XML | 76 | 12 | 9 | 2 eran del PDF, 1 sin decidir |
+| error_continuidad | 50 | 9 | 7 | 2 fondos en su primer anio |
+
+Revisados despues: F54 2013 y F40 2020 eran errores del PDF (ECP con la distribucion reinvertida sin linea de reinversion; resultado impreso en el renglon de distribucion), no lectura; F55 2021 y F56 2017 si eran del XML (el PDF tenia ademas otro error, ver falsos negativos).
+
+**Correcciones.**
+- 04c: quiebre de continuidad en PDF y XML a la vez sin fusion registrada -> `posible_fusion` (revisar la nota), no error. Una diferencia PDF/XML de una linea sin ancla ni otra etapa -> `diferencia_pdf_xml`, no error.
+- 07: identidades entre columnas (apertura actual = cierre anterior) no se evaluan en el primer anio del fondo (sin XML t-1 y cierre anterior en 0): 555 filas.
+- Lector: monto con espacio antes de un grupo de miles ("46.755 .468", `reparar_miles_partido`); total corrido hasta 32 pt a la izquierda de su columna, solo con separador de miles (`TOL_CORRIDO`; sin separador tomaba el anio "2015"); en paginas sin montos de 3 digitos, la columna bajo el encabezado "Nota" no es columna de montos (notas entre parentesis en un fondo de primer periodo quedaban como actual y los montos como anterior).
+- 03e: version atipica. Si una de las cuatro versiones esta a mas de 20 veces la dispersion de las otras tres, se clasifica como si las otras fueran iguales (dos errores a la vez, uno grande y uno chico). La diferencia se mide contra la otra version del mismo anio, no contra la mediana, para que el 04c la junte con las otras senales del mismo error.
+
+**Efecto.** Errores 381 -> 354, sin errores nuevos salvo los falsos negativos recuperados. Precision estimada con la misma muestra ~87% (error_PDF ~88%, error_XML ~92%, continuidad 7/7): optimista, porque se corrigio sobre la muestra que la mide. La cifra que vale es la de una muestra nueva.
+
+**Falsos negativos.** La precision no mide lo que se escapa. Revision de los 12 fondo-anio "otro" del 03e: 2 errores reales del PDF sin caso (un fondo-anio: EFE con 2,8 millones de diferencia, corregido al anio siguiente, y el XML t distinto en 610; otro), que motivaron la regla de version atipica.
+
+**Medicion: flujos de cuotas ECP vs EFE (no es chequeo todavia).** `verificacion/medir_flujos_cuotas.py`, solo XML. Los aportes y rescates del EFE (caja) deberian salir de los del ECP (devengado) ajustados por rescates por pagar. 81,4% de los fondo-anio se explican con tres convenciones de presentacion: caja (EFE = ECP ajustado por rescates por pagar, 61%), devengado (EFE = ECP, 15%) y distribucion reinvertida en cuotas (aporte sin caja, 1%), mas canjes, fusiones e inmateriales. Lo que no cierra (~19%) se concentra en pocas AGF y puede ser otra convencion: no se lee como tasa de error. Senales para revision manual: ECP con rescates al doble del EFE (dos fondo-anio de 2011) y aportes del ECP muy por encima de lo cobrado (candidatos a fusion sin registrar).
+
+**Pendiente.** Notas de las 5 posibles fusiones; PDF con solo notas sin estados (un fondo-anio) que el 03f no marca; separar en el 07 la continuidad de la coherencia interna del XML (hoy todo es `error_continuidad`); contar una sola vez las identidades repetidas entre etapas (03c y 07); muestra aleatoria nueva para la precision final.

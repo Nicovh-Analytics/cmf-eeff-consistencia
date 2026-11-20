@@ -592,7 +592,11 @@ def tipificar(t):
                 docs.remove("PDF/XML")
             tipo = "error_" + ("+".join(docs) if docs else "?")
             if set(g["fuente"]) == {"07"}:
-                tipo = "error_continuidad"      # identidad del XML; el PDF sin contrastar (revision: 4/8 igual)
+                # Entre columnas ("... (act) = ... (ant)"): apertura del anio contra cierre del anterior;
+                # puede venir del PDF (el XML lo copia: 3 de 7 en la muestra de precision). Por columna
+                # (sumas, activo - pasivo, cruces): el XML no cuadra consigo mismo -> error del XML.
+                tipo = ("error_continuidad" if g["linea"].astype(str).str.contains(r"\(act\)").any()
+                        else "error_XML")
         else:
             f = str(raiz["forma"])
             tipo = ("desglose" if "desglose" in f else "rotulo" if "rotulo" in f else
@@ -607,10 +611,19 @@ def tipificar(t):
         # continuidad del 03d ("continuidad/total") o del 07: el inicio contra el cierre anterior del ECP
         # ("ECP inicio total (act) = cierre (ant)") y contra el activo neto anterior del ESF
         # ("ECP inicio (act) = ESF activo neto (ant)"): la fusion rompe las dos con la misma dif
-        if fz and g["linea"].astype(str).str.contains(r"continuidad|inicio.*=\s*(?:cierre|ESF activo neto)",
-                                                      regex=True).all():
+        es_cont = g["linea"].astype(str).str.contains(r"continuidad|inicio.*=\s*(?:cierre|ESF activo neto)",
+                                                      regex=True).all()
+        if fz and es_cont:
             tipo = "criterio"
             evid = f"fusion {fz.get('fecha', '')} {fz.get('absorbido', '')}: {fz.get('evidencia', '')}".strip()
+        elif tipo == "error_PDF+XML" and es_cont:
+            # Quiebre de continuidad en el PDF y en el XML a la vez, sin fusion registrada: en la muestra
+            # de precision los 5 eran fusiones (D-CU12). Se revisa la nota antes de llamarlo error.
+            tipo = "posible_fusion"
+        elif tipo == "error_PDF/XML":
+            # Solo dice que PDF y XML difieren en una linea, sin ancla ni otra etapa que diga cual:
+            # en la muestra de precision 0 de 6 eran errores (lectura o presentacion distinta).
+            tipo = "diferencia_pdf_xml"
         out.append(dict(caso_id=cid, rut=raiz["rut"], anio_doc=raiz["anio_doc"], columna=raiz["columna"],
                         tipo=tipo, estado_raiz=raiz["estado"], linea_raiz=raiz["linea"], nivel=raiz["nivel"],
                         dif=g["adif"].max(), fuentes=",".join(sorted(set(g["fuente"]))),

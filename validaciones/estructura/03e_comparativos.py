@@ -38,7 +38,7 @@ from config import CMF_HOME, casos_conocidos, umbral_materialidad
 
 DIR_PROC = CMF_HOME / "procesado"
 TOL = 1
-
+RAZON_ATIPICO = 20   # una version a mas de 20x la dispersion de las otras tres: dos errores a la vez
 
 def leer_lineas():
     """Tabla larga: rut, anio, linea, columna, pdf, xml, motivo de duda ("ocr", "solo_glosa" o "") y dudosa."""
@@ -103,6 +103,19 @@ def lectura_probable(pdf, xml):
 
 VERSIONES = ["pdf_t", "xml_t", "pdf_t1", "xml_t1"]
 
+def atipico(r):
+    """Una version lejos de las otras tres, que casi coinciden entre si: dos errores a la vez, uno
+    grande y uno chico (revision de precision: PDF t con 2,8 millones de diferencia en el EFE y el
+    XML t con 610). Devuelve (version, mediana de las otras tres) o None."""
+    v = {k: getattr(r, k) for k in VERSIONES}
+    if any(pd.isna(x) for x in v.values()):
+        return None
+    for k, x in v.items():
+        resto = sorted(abs(y) for j, y in v.items() if j != k)
+        disp = resto[2] - resto[0]
+        if disp > TOL and abs(abs(x) - resto[1]) > RAZON_ATIPICO * disp:
+            return k, resto[1]
+    return None
 
 def patron(r):
     """Cual de las 4 versiones del monto (PDF t, XML t, comparativo PDF t+1, comparativo XML t+1) no
@@ -122,6 +135,12 @@ def patron(r):
         return "reexpresion", abs(p1) - abs(pt)
     if igual(pt, p1) and igual(xt, x1):
         return "criterio", abs(xt) - abs(pt)       # PDF y XML distintos, igual en los dos anios
+    a = atipico(r)
+    if a:
+        # dif contra la otra version del mismo anio (no la mediana): la mediana arrastra la diferencia
+        # chica del otro documento y el 04c no junta el caso con las otras senales del mismo error
+        par = {"pdf_t": "xml_t", "xml_t": "pdf_t", "pdf_t1": "xml_t1", "xml_t1": "pdf_t1"}[a[0]]
+        return "solo_" + a[0], abs(getattr(r, a[0])) - abs(getattr(r, par))
     return "otro", abs(p1) - abs(pt)
 
 
@@ -149,6 +168,15 @@ def clasificar(r):
         return "pdf_error_comparativo"
     if not xml_igual and pdf_t_ok and pdf_t1_ok:
         return "reexpresion"
+    a = atipico(r)
+    if a and a[0] in ("pdf_t", "pdf_t1"):
+        k, med = a
+        pdf = getattr(r, k)
+        clave = (r.rut, r.anio, "actual", est) if k == "pdf_t" else (r.rut, r.anio + 1, "anterior", est)
+        if (lectura_probable(pdf, med) and not omision_pdf(pdf, med, clave)) or (
+                k == "pdf_t" and r.anio == 2011 and r.linea in ESF_2011):
+            return "lectura"
+        return "pdf_corregido_despues" if k == "pdf_t" else "pdf_error_comparativo"
     return "otro"
 
 

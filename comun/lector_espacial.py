@@ -25,7 +25,7 @@ import json
 import re
 from pathlib import Path
 from config import CMF_HOME
-from comun.reparar_palabras import reparar_apilados, reparar_parentesis_partido
+from comun.reparar_palabras import reparar_apilados, reparar_miles_partido, reparar_parentesis_partido
 
 RE_CONTINUACION = re.compile(r"^[a-záéíóúñ][^\d]{0,40}$")
 DIR_COORDS = CMF_HOME / "coords_pdf"
@@ -38,6 +38,7 @@ RE_NUMTOK = re.compile(r"^\(*[-−–—]?[\d.]*\d[\d.]*(,\d{2})?\)*$|^\($|^[-�
 RE_GUION = re.compile(r"^[-−–—]$")
 RE_MILES_OK = re.compile(r"\d{1,3}(?:\.\d{3})*")
 RE_MILES_COMA = re.compile(r"^\(?-?\d{1,3}(?:[.,]\d{3})+\)?[.,]?$")
+TOL_CORRIDO = 32.0   # monto alineado a la izquierda bajo un subrayado mas ancho (precision 04c: 3.642 a 28 pt)
 
 
 def normalizar_ocr(pagina):
@@ -111,7 +112,7 @@ def _es_monto_de_franja(t):
     return bool(re.fullmatch(r"\d{1,3}(?:\.\d{3})+|\d{3,}", nucleo))
 
 
-def _franjas(nums, ancho):
+def _franjas(nums, ancho, notas_x=()):
     """Bordes derechos de las columnas de montos (de izquierda a derecha)."""
     xs = sorted(w[2] for w in nums if w[2] > ancho * 0.45 and _es_monto_de_franja(w[0]))
     grupos = []
@@ -158,6 +159,11 @@ def _franjas(nums, ancho):
         # guiones, o los numeros de pagina de un indice (en la corrida completa leia basura).
         # Excepcion: una sola columna (fondo en su primer periodo) que tiene montos y no
         # numeros de nota: alguno de 3 digitos o >= 2 negativos "(7)" / "-7".
+        # Columna de notas entre parentesis "(14)" bajo el encabezado "Nota": en un fondo en su
+        # primer periodo (una sola columna de montos chicos) quedaba como actual y los montos como
+        # anterior (precision 04c). Si todas las columnas caen bajo "Nota", se dejan como estaban.
+        if notas_x:
+            gc = [g for g in gc if not any(abs(g[len(g) // 2][0] - nx) <= 25 for nx in notas_x)] or gc
         def es_de_montos(g):
             ts = [t for _, t in g]
             return (any(len(t.strip("()-−–— ")) == 3 for t in ts)
@@ -178,7 +184,8 @@ def filas_espaciales(pagina):
     es_num = lambda t: bool(RE_NUMTOK.match(t)) and not RE_FECHA_NUM.match(t)
     nums = _unir_tocandose([w for w in palabras if es_num(w[0])])
     textos = [w for w in palabras if not es_num(w[0])]
-    franjas = _franjas(nums, ancho)
+    notas_x = [w[2] for w in palabras if w[0].strip(".:").lower() in ("nota", "notas", "n°", "nº")]
+    franjas = _franjas(nums, ancho, notas_x)
     if not franjas:
         return [], []
     f_act, f_ant = (franjas[-2], franjas[-1]) if len(franjas) >= 2 else (franjas[-1], None)
@@ -225,6 +232,13 @@ def filas_espaciales(pagina):
                             and len(re.sub(r"\D", "", o[0])) >= 3 for o in nums)
                 if rival:
                     continue
+        elif (TOL_FRANJA < f_act - w[2] <= TOL_CORRIDO and re.search(r"\d\.\d{3}", w[0])
+              and not any(o is not w and abs(o[3] - w[3]) <= 3 and abs(o[2] - f_act) <= TOL_FRANJA for o in nums)):
+            col = "act"                       # total corrido a la izquierda de su columna
+        elif (f_ant and TOL_FRANJA < f_ant - w[2] <= TOL_CORRIDO and w[2] - f_act > TOL_FRANJA
+              and re.search(r"\d\.\d{3}", w[0])
+              and not any(o is not w and abs(o[3] - w[3]) <= 3 and abs(o[2] - f_ant) <= TOL_FRANJA for o in nums)):
+            col = "ant"
         elif re.fullmatch(r"\d{1,2}", w[0]) and ancho * 0.4 < w[2] < f_act - 25:
             col = "nota"
         else:
@@ -317,5 +331,6 @@ def cargar_coords(rut, anio, pdf):
         for pg in d["paginas"].values():
             if not pg.get("rearmada"):
                 pg["palabras"] = reparar_apilados(pg["palabras"])
+            pg["palabras"] = reparar_miles_partido(pg["palabras"])
             pg["palabras"] = reparar_parentesis_partido(pg["palabras"])
     return d

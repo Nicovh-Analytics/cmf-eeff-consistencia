@@ -231,6 +231,18 @@ def chequeo_entre_columnas(cta):
     x["falla"] = x["dif"].abs() > TOL_IDENTIDAD
     x["falla_grande"] = x["dif"].abs() > MAX_DIF_MENOR
     x["contexto"] = "entre_columnas"
+    # Primer anio del fondo (sin XML t-1) con el cierre anterior en 0: no hay periodo anterior que
+    # arrastrar (muestra de precision: 2 de 9 casos de continuidad eran fondos nuevos).
+    ra = cta.drop_duplicates("archivo").set_index("archivo")[["rut", "anio"]]
+    hay = set(zip(ra["rut"], ra["anio"]))
+    x = x.join(ra, on="archivo")
+    nuevo = pd.Series([(r, a - 1) not in hay for r, a in zip(x["rut"], x["anio"])], index=x.index)
+    salta = nuevo & (x["suma_partes"] == 0)
+    if salta.any():
+        print(f"entre columnas: {int(salta.sum())} filas de fondos en su primer anio (sin XML t-1, "
+              f"cierre anterior en 0) no se evaluan; por anio: "
+              f"{x.loc[salta, 'anio'].value_counts().sort_index().to_dict()}")
+    x = x[~salta].drop(columns=["rut", "anio"])
     return x
 
 
