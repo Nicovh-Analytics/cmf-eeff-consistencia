@@ -134,6 +134,37 @@ IDENTIDADES = {
          # metodo directo | metodo indirecto (76 XML 2011-2015)
          (1, "EFE:AumentoNetoDeEfectivoYEfectivoEquivalente|EFE:AumentoDisminucionNetoDeEfectivoYEfectivoEquivalente"),
          (1, "EFE:DiferenciasDeCambioNetasSobreEfectivoYEfectivoEquivalente")]),
+    # Identidades del generador oficial del XML (Circular 1997, planilla de la CMF) que faltaban
+    "ERI utilidad antes + impuesto = despues": ("ERI:UtilidadPerdidaDeLaOperacionDespuesDeImpuesto",
+        [(1, "ERI:UtilidadPerdidaDeLaOperacionAntesDeImpuesto"),
+         (1, "ERI:ImpuestosALasGananciasPorInversionesEnElExterior")]),
+    "ERI resultado antes distrib. = utilidad despues impuesto": (
+        "ERI:AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios",
+        [(1, "ERI:UtilidadPerdidaDeLaOperacionDespuesDeImpuesto")]),
+    "ERI resultado antes + distribucion = despues": (
+        "ERI:AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios",
+        [(1, "ERI:AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios"),
+         (1, "ERI:DistribucionDeBeneficios")]),
+    "ECP resultado antes + distribucion = despues": (
+        "ECP:AumentoDisminucionDelActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios",
+        [(1, "ECP:AumentoDisminucionDelActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios"),
+         (1, "ECP:DistribucionDeBeneficiosEnEfectivo"), (1, "ECP:DistribucionDeBeneficiosEnCuotas")]),
+    "EFE ind. suma ajustes = subtotal": ("EFE:SubtotalAjustes", [(1, "EFE:" + c) for c in _t(
+        "AjustesPorInteresesDiferenciasDeCambioYReajustesDevengadosNoRealizados "
+        "AjustesPorIngresosPorDividendosNoRealizados "
+        "AjustesPorDiferenciasDeCambioNoRealizadasSobreEfectivoYEfectivoEquivalente "
+        "AjustesPorOtrasVariacionesDeResultadosNoRealizadas")]),
+    "EFE ind. suma variaciones = subtotal": ("EFE:SubtotalEfectivoUtilizadoEnOperaciones", [(1, "EFE:" + c) for c in _t(
+        "AumentoDisminucionNetaDeCuentasPorPagarCobrarALaSociedadAdministradora "
+        "AumentoDisminucionNetaDeCuentasPorPagarCobrarAIntermediarios AumentoNetoDeOtrosDeudoresYAcreedores "
+        "AumentoNetoDeActivosFinancierosAValorRazonableConEfectoEnResultados "
+        "AumentoNetoDePasivosFinancierosAValorRazonableConEfectoEnResultados")]),
+    "EFE ind. resultado + ajustes + variaciones = flujo operacion": ("EFE:FlujoNetoUtilizadoEnActividadesDeLaOperacion",
+        [(1, "EFE:AumentoDisminucionDelActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeLaDistribucionDeBeneficios"),
+         (1, "EFE:SubtotalAjustes"), (1, "EFE:SubtotalEfectivoUtilizadoEnOperaciones")]),
+    "EFE ind. suma financiamiento = flujo financ.": ("EFE:FlujoNetoUtilizadoPorActividadesDeFinanciamiento",
+        [(1, "EFE:" + c) for c in _t("DistribucionesPagadasAParticipes ColocacionDeCuotasEnCirculacion "
+                                       "RescateDeCuotasEnCirculacion Otros")]),
     "cruce ESF activo neto = ECP cierre": ("ESF:ActivoNetoAtribuibleALosParticipes",
         [(1, "ECP:ActivoNetoAtribuibleAParticipesAl31DeDiciembreValorCuota")]),
     "cruce ESF efectivo = EFE saldo final": ("ESF:EfectivoYEfectivoEquivalente",
