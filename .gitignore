@@ -10,3 +10,4 @@ verificacion/
 .env
 .env.*
 .venv/
+*.log
