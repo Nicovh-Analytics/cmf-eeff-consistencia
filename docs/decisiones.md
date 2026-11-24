@@ -910,3 +910,39 @@ Revisados despues: F54 2013 y F40 2020 eran errores del PDF (ECP con la distribu
 **Medicion: flujos de cuotas ECP vs EFE (no es chequeo todavia).** `verificacion/medir_flujos_cuotas.py`, solo XML. Los aportes y rescates del EFE (caja) deberian salir de los del ECP (devengado) ajustados por rescates por pagar. 81,4% de los fondo-anio se explican con tres convenciones de presentacion: caja (EFE = ECP ajustado por rescates por pagar, 61%), devengado (EFE = ECP, 15%) y distribucion reinvertida en cuotas (aporte sin caja, 1%), mas canjes, fusiones e inmateriales. Lo que no cierra (~19%) se concentra en pocas AGF y puede ser otra convencion: no se lee como tasa de error. Senales para revision manual: ECP con rescates al doble del EFE (dos fondo-anio de 2011) y aportes del ECP muy por encima de lo cobrado (candidatos a fusion sin registrar).
 
 **Pendiente.** Notas de las 5 posibles fusiones; PDF con solo notas sin estados (un fondo-anio) que el 03f no marca; separar en el 07 la continuidad de la coherencia interna del XML (hoy todo es `error_continuidad`); contar una sola vez las identidades repetidas entre etapas (03c y 07); muestra aleatoria nueva para la precision final.
+
+### D-CU16. Referencias oficiales de la CMF, identidades del generador y precision final (2026-11-23)
+
+**Referencias oficiales** (en `data/cmf-eeff/referencias/`, fuera del repo; enlaces en el README):
+- Ficha tecnica e instructivo de la Circular 1997 (XML de fondos mutuos): cifras en miles de la moneda funcional sin decimales; el atributo `Nota` es el numero de la nota asociada (en general solo en el periodo actual); el XML trae el numero de la ultima nota informada y si el EFE es directo o indirecto. No publica reglas de cuadre ni de validacion.
+- Planilla generadora del XML: los totales estan protegidos y calculados por formula. De ahi salen las identidades oficiales (`identidades_oficiales.csv`), el signo esperado de cada linea (`signos_oficiales.csv`) y los codigos del modelo (`codigos_oficiales.csv`).
+- Esquema XSD: `CodigoCuenta` es texto libre (no hay catalogo de codigos), `Serie` de 5 caracteres como maximo, `Nota` entera.
+- Respuesta de la CMF a una consulta del autor (noviembre de 2026): "no existe" un procedimiento de verificacion de correspondencia entre las cifras del XML y las del PDF de un mismo envio en la entrada de los archivos. Es el hueco que cubre este proyecto.
+
+**Identidades oficiales en el 07.** Se agregaron las 8 identidades del generador que faltaban: la cadena del ERI (utilidad antes + impuesto = despues; resultado antes de distribucion = utilidad despues de impuesto; resultado despues = antes + distribucion), el ECP (resultado despues = antes + distribucion en efectivo + en cuotas) y el EFE indirecto (subtotal de ajustes, subtotal de variaciones, flujo de operacion, financiamiento). Se evaluaron en los 4.512 XML (las del EFE indirecto en sus 76) y no fallan nunca: el XML es coherente por construccion con las formulas de la planilla. Sus errores internos estan donde la planilla no controla: la columna comparativa del ESF y los cruces entre estados. La coherencia aritmetica del XML no garantiza que diga lo mismo que el PDF.
+
+El modelo oficial confirma dos lecturas de la revision: el cierre del ECP es inicio + transacciones + resultado despues de distribucion, sin linea de reinversion (la distribucion pagada en cuotas vuelve como aporte); y el EFE directo no tiene linea de distribuciones pagadas (van en "Otros" del financiamiento).
+
+**Correcciones de esta ronda.** Fusiones registradas con su nota (cinco fondo-anio): pasan de `posible_fusion` a `criterio`. Un caso solo del 07 con identidades por columna (sumas, activo - pasivo, cruces) es `error_XML`; `error_continuidad` queda para la apertura contra el cierre anterior (16 casos cambian de nombre). Errores: 354 -> 349.
+
+**Precision final.** Muestra aleatoria nueva (semilla 20261120), estratificada, 60 casos, revisada despues de todas las correcciones y sin corregir nada sobre ella.
+
+| tipo | errores | muestra | confirmados | precision | IC 95% |
+|---|---|---|---|---|---|
+| error_PDF | 233 | 36 | 34 | 94% | 82-98% |
+| error_XML | 91 | 16 | 14 | 88% | 64-97% |
+| error_continuidad | 25 | 8 | 8 | 100% | 68-100% |
+| **total** | **349** | **60** | | **93% (+-6)** | ~325 confirmados |
+
+Primera pasada: 88% (+-8). La cifra final sale de una revision de consistencia de 7 veredictos, sin volver a mirar el resto: el mismo caso con el mismo veredicto que en la primera muestra (2), notas que describian un error del documento marcadas como "otro" o con el documento equivocado (3), y una suma verificada en el PDF (1) y una nota completada (1). Se declaran las dos cifras.
+
+Lo mas frecuente es un subtotal digitado mal con las lineas correctas. Lo no confirmado son diferencias de presentacion entre PDF y XML sin un documento demostrablemente malo (una linea presentada en uno y no en el otro, montos de 2 a 10 en miles de dolares).
+
+**Hallazgos de documento (fuera del conteo por linea).** PDF ilegibles (dos fondo-anio), PDF con solo la opinion del auditor (dos) y 15 PDF escaneados sin OCR (lotes de 2012 y 2015) que no se verifican. La escalera (`perfil_estado`) los deja con documento = no y el resto no evaluable.
+
+**Mediciones (no cambian casos todavia).**
+- Fila desplazada (`medir_filas_desplazadas.py`): subtotales impresos un renglon mas abajo. Un fondo con la misma plantilla corrida tres anios seguidos (un fondo): un error recurrente se ve como criterio (el PDF t y el comparativo del t+1 coinciden entre si y difieren del XML). Pendiente: regla en el 04b que lo junte en un caso `pdf/fila_desplazada` y le gane a criterio.
+- Conformidad del XML (`medir_conformidad_xml.py`): codigos fuera del modelo, series de mas de 5 caracteres, notas no enteras. Una serie informada con el codigo de otra (un fondo-anio: dos series "G") rompe los cruces por serie: hay que detectar (archivo, contexto, codigo, serie) repetidos.
+- Notas (`piloto_notas.py`, 50 PDF): el texto completo se extrae en 0,1-0,2 s por PDF; 96% de las referencias a notas calzan con el titulo de la nota; un documento con todas las referencias corridas en uno, en el PDF y copiado al XML (un fondo-anio).
+
+**Pendiente para despues de v1.** Regla de fila desplazada; series repetidas en el parser; capa de notas (referencias, ultima nota informada, informacion estadistica por serie = cierre del ECP); cartola diaria como tercera fuente; signos contra el modelo (medir primero).
