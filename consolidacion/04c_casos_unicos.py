@@ -369,6 +369,21 @@ def senales():
     linea = b["clase"].astype(str).str.contains("linea_distinta|linea_no_sumada|tipeo")
     clase_03b = b["clase"].map(clase_de)
     clase_03b = clase_03b.where(~((clase_03b == "error") & (b["igual_xml"] == True) & ~linea), "revisar")
+    # 03g (D-CU17): el 03b llama lectura a un subtotal impreso que no es la suma de sus lineas cuando el
+    # XML trae la suma. Si la cadena superior y el ancla cierran con la suma interna, el impreso no es la
+    # cifra real; con un solo digito distinto (o la misma cifra impresa en t y en el comparativo de t+1)
+    # en una pagina de texto, la escribio el emisor: la lectura de texto no cambia un digito.
+    ruta_loc = P / "localizacion.csv"
+    if ruta_loc.exists():
+        lz = pd.read_csv(ruta_loc, dtype={"rut": str})
+        lz = lz[(lz["localizacion"] == "error_subtotal") & (lz["un_digito"] | lz["repite_t1"])]
+        k_lz = set(zip(lz["rut"], lz["anio"], lz["subtotal"], lz["columna"]))
+        emisor = pd.Series([(r, a, su, c) in k_lz for r, a, su, c
+                            in zip(b["rut"], b["anio"], b["subtotal"], b["columna"])], index=b.index)
+        sube = emisor & (clase_03b == "lectura") & (b["clase"] != "probable_lectura_ocr")
+        clase_03b = clase_03b.where(~sube, "error")
+        print(f"03g: {int(sube.sum())} subtotales del 03b de lectura a error (un digito o repetido en t+1, "
+              f"la cadena cierra con la suma interna)")
     s.append(pd.DataFrame({"fuente": "03b", "rut": b["rut"], "anio_doc": b["anio"], "documento": "PDF",
                            "columna": b["columna"], "estado": b["subtotal"].map(ESTADO), "linea": b["subtotal"],
                            "nivel": "subtotal", "dif": b["dif"], "clase": clase_03b,
@@ -633,6 +648,29 @@ def tipificar(t):
                                      if pd.notna(p) and str(p) not in ("", "nan")), pd.NA)))
     return pd.DataFrame(out)
 
+def agregar_localizacion(c):
+    """03g: en la celda del caso (fondo-anio-columna-estado), cual cifra del PDF es la mala y con que
+    evidencia (impreso, suma de lineas, como cierra el nivel superior, ancla, XML). Es evidencia para la
+    revision y el informe: no cambia el tipo del caso. El arrastre se omite (repite al subtotal hijo)."""
+    ruta = P / "localizacion.csv"
+    if not ruta.exists():
+        print("(sin localizacion.csv: correr el 03g)")
+        return c
+    loc = pd.read_csv(ruta, dtype={"rut": str})
+    loc = loc[~loc["localizacion"].str.startswith("arrastre")]
+    m = lambda v: "-" if pd.isna(v) else f"{v:,.0f}".replace(",", ".")
+    loc["ev"] = [f"{s}: impreso {m(i)}, suma {m(su)}, padre cierra con {ci}, ancla {an}, XML {xs}"
+                 for s, i, su, ci, an, xs in zip(loc["subtotal"], loc["impreso"], loc["suma_lineas"],
+                                                 loc["cierra"], loc["ancla"], loc["xml_sigue"])]
+    agg = (loc.groupby(["rut", "anio", "columna", "estado"])
+           .agg(localizacion=("localizacion", lambda s: "+".join(sorted(set(s)))),
+                repite_t1=("repite_t1", "any"), evidencia_loc=("ev", " ; ".join))
+           .reset_index().rename(columns={"anio": "anio_doc", "estado": "estado_raiz"}))
+    c = c.merge(agg, on=["rut", "anio_doc", "columna", "estado_raiz"], how="left")
+    e = c[c["tipo"].astype(str).str.startswith("error")]
+    print(f"03g: errores con localizacion {e['localizacion'].notna().sum()} de {len(e)}; "
+          f"con la misma cifra en t y t+1 (emisor): {int(e['repite_t1'].fillna(False).astype(bool).sum())}")
+    return c
 
 def main():
     t = agrupar(senales())
@@ -640,6 +678,7 @@ def main():
     enc = pd.read_csv(P / "encabezados.csv", dtype={"rut": str})
     enc = enc[enc["es_ultimo_envio"]][["rut", "anio", "nombre_agf"]].rename(columns={"anio": "anio_doc"})
     c = c.merge(enc, on=["rut", "anio_doc"], how="left")
+    c = agregar_localizacion(c)
     c.to_csv(P / "casos_unicos.csv", index=False, encoding="utf-8-sig")
     t.to_csv(P / "casos_unicos_senales.csv", index=False, encoding="utf-8-sig")
 

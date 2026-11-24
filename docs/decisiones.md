@@ -946,3 +946,31 @@ Lo mas frecuente es un subtotal digitado mal con las lineas correctas. Lo no con
 - Notas (`piloto_notas.py`, 50 PDF): el texto completo se extrae en 0,1-0,2 s por PDF; 96% de las referencias a notas calzan con el titulo de la nota; un documento con todas las referencias corridas en uno, en el PDF y copiado al XML (un fondo-anio).
 
 **Pendiente para despues de v1.** Regla de fila desplazada; series repetidas en el parser; capa de notas (referencias, ultima nota informada, informacion estadistica por serie = cierre del ECP); cartola diaria como tercera fuente; signos contra el modelo (medir primero).
+
+### D-CU17. Localizacion: cual cifra esta mala cuando un subtotal del PDF no suma (2026-11-24)
+
+**Problema.** El 03b detecta que un subtotal del PDF no es la suma de sus lineas, pero no dice cual cifra esta mala: el subtotal impreso, una linea, o la lectura. Los veredictos manuales razonaban cada caso desde cero y salieron inconsistentes entre muestras (cuatro veredictos de la primera muestra).
+
+**Protocolo** (footing, cross-footing y amarre entre estados, el procedimiento de auditoria), en el 03g (`localizacion.csv`):
+1. Suma interna: d = subtotal impreso - suma de sus lineas.
+2. Propagacion: el nivel superior (subtotales del EFE -> aumento neto -> evolucion del efectivo -> efectivo del ESF; total activo/pasivo -> activo neto; ingresos/gastos -> utilidad) cierra con el impreso o con la suma interna. Con la suma interna, el subtotal impreso es el malo (`error_subtotal`); con el impreso, una linea (`error_linea`); con ninguno, doble falla (`revisar`).
+3. Ancla del EFE: la evolucion del efectivo suma y el saldo final es el efectivo del ESF. Solo un ancla que pasa su propia suma confirma la cadena.
+4. Firmas, antes que el error del emisor: redondeo (2 en miles de pesos, 1 en dolares), subtotal con el signo invertido (el 03b compara en valor absoluto), lectura OCR (del 03b), arrastre de un subtotal hijo, fila desplazada (el impreso es otro renglon de la pagina, igualdad exacta), inversion de signo de una linea (2|v| = |d|) y omision de lectura (un renglon de monto |d|); estas tres con montos >= 100.
+Marcas: un solo digito distinto entre impreso y suma; la misma cifra impresa en el PDF de t y en el comparativo del PDF de t+1 (`repite_t1`: la escribio el emisor).
+
+El marco general es la localizacion de errores de Fellegi-Holt (1976): el minimo de cifras a cambiar para que se cumplan todas las reglas. El arbol es su version simple; si deja muchos `revisar`, la busqueda minima es el paso siguiente.
+
+**Validacion.**
+- Dos casos verificados en el PDF con la cadena completa: un subtotal impreso con 10 de mas que el aumento neto y el saldo final no usan (`error_subtotal`), y una linea impresa con 5.478 de diferencia, con el subtotal correcto segun el aumento neto y el efectivo del ESF (`error_linea`; antes se habia leido como subtotal malo).
+- Contra los 98 veredictos de las muestras: 34 casos tienen un subtotal que no suma; todos los errores confirmados caen en error de subtotal, de linea, fila desplazada o arrastre, salvo uno en inversion de signo. 64 no tienen falla de suma (la mayoria de los errores del XML): el arbol localiza dentro del PDF, no valida el XML.
+- Contra el 04c: de 27 subtotales con un solo digito distinto y la cadena cerrando con la suma interna, 19 ya eran error_PDF; 3 son errores reales inmateriales (10 a 40 sobre millones; uno repetido en t y t+1) que quedan como inmateriales; 2 son redondeo; 2 de 2 en dolares quedan como en el 03b.
+
+**Regla nueva en el 04c.** El 03b llamaba lectura a un subtotal que difiere de la suma de sus lineas cuando el XML trae la suma. Si ademas la cadena y el ancla cierran con la suma interna y el impreso difiere en un solo digito (o se repite en t+1) en una pagina de texto, es un error del emisor: la lectura de texto falla por estructura (miles partidos, columnas), no cambiando un digito. Cambia 1 caso, verificado en el PDF (un flujo de operacion con un digito distinto). Errores: 349 -> 350.
+
+**Sumas sin caso.** De 648 subtotales que no suman en el PDF, 470 no forman caso y el arbol explica por que: lectura OCR (265), signo del subtotal (42), redondeo, e inmateriales. No hay un hueco sistematico entre el 03b y el 04c.
+
+**Evidencia en el caso.** El 04c agrega a cada caso `localizacion`, `repite_t1` y `evidencia_loc` (impreso, suma, como cierra el padre, ancla, XML); `revisar.py` la muestra. No cambia tipos ni conteos.
+
+**Documento.** En las carpetas con varios PDF (estados financieros, dictamen y declaracion) el pipeline toma siempre los estados financieros con notas. Los PDF con solo la opinion del auditor son lo que subio la AGF, no un error de seleccion.
+
+**Pendiente.** Paso 4 del protocolo (linea por linea contra el XML y el comparativo t+1, para separar linea mal impresa de linea mal leida); ECP en el arbol (via 03d); Fellegi-Holt si `revisar` crece; tipo de opinion del dictamen como variable.
