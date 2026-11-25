@@ -6,3 +6,4 @@ beautifulsoup4==4.14.3
 pypdfium2==5.14.0
 pytesseract==0.3.13
 pytest==9.1.1
+pyarrow==26.0.1

@@ -38,7 +38,7 @@ Clase de cada fondo-anio t (chequeo A):
   modificado_saldos  cambia algun saldo clave (activo neto, total activo,
                   resultado, cierre del ECP, saldo final de efectivo)
 
-Lee:      data/procesado/encabezados.csv, cuentas.csv
+Lee:      data/procesado/encabezados.csv, hechos_xml.parquet (motor/hechos.py, desde cuentas.csv)
 Escribe:  data/procesado/continuidad_resumen.csv   1 fila por fondo-anio t
           data/procesado/continuidad_detalle.csv   cifras distintas (A y B)
           data/procesado/continuidad_por_agf.csv   tasas por AGF
@@ -54,6 +54,7 @@ from pathlib import Path
 from config import CMF_HOME
 from comun.secciones import asignar_secciones
 import catalogo
+from motor import hechos, reglas
 
 import pandas as pd
 
@@ -92,31 +93,8 @@ TOL_IDENTIDAD = 1       # diferencias de 1 se toleran (redondeo de sumas)
 def chequeo_identidades(cta):
     """C: identidades contables dentro de cada XML y contexto (totales del
     fondo), mas suma de series del cierre del ECP = total."""
+    filas = [reglas.por_columna(cta, identidades=IDENTIDADES)]
     tot = cta[cta["serie"] == ""]
-    w = tot.assign(col=tot["estado"] + ":" + tot["codigo"]).pivot_table(
-        index=["archivo", "contexto"], columns="col", values="valor", aggfunc="first")
-    filas = []
-    def columna(cod):
-        """'A|B' -> valor de A; si falta, el de B (codigos alternativos por plantilla)."""
-        alts = [a for a in cod.split("|") if a in w]
-        if not alts:
-            return None
-        v = w[alts[0]]
-        for a in alts[1:]:
-            v = v.fillna(w[a])
-        return v
-
-    for nombre, (total, partes) in IDENTIDADES.items():
-        t = columna(total)
-        if t is None:
-            continue
-        presentes = t.notna()                   # se evalua solo si el total esta informado
-        rhs = 0
-        for sg, c in partes:
-            v = columna(c)
-            rhs = rhs + (sg * v.fillna(0) if v is not None else 0)
-        d = pd.DataFrame({"identidad": nombre, "total": t, "suma_partes": rhs})[presentes]
-        filas.append(d)
 
     # Suma de series del cierre = cierre total (ECP)
     ser = cta[(cta["codigo"] == COD_CIERRE) & (cta["serie"] != "")] \
@@ -143,17 +121,7 @@ def chequeo_entre_columnas(cta):
     periodo actual tiene que ser el cierre del periodo anterior. La validacion
     por columna no lo ve (caso visto: EFE final anterior 2.434.815 vs
     inicial actual 2.414.815, cada columna cuadra por separado)."""
-    tot = cta[cta["serie"] == ""]
-    w = tot.assign(col=tot["estado"] + ":" + tot["codigo"]).pivot_table(
-        index="archivo", columns=["contexto", "col"], values="valor", aggfunc="first")
-    filas = []
-    for nombre, (apertura, cierre) in ENTRE_COLUMNAS.items():
-        a, c = ("PeriodoActual", apertura), ("PeriodoAnterior", cierre)
-        if a not in w or c not in w:
-            continue
-        ambos = w[a].notna() & w[c].notna()
-        filas.append(pd.DataFrame({"identidad": nombre, "total": w.loc[ambos, a],
-                                   "suma_partes": w.loc[ambos, c]}))
+    filas = [reglas.entre_columnas(cta, pares=ENTRE_COLUMNAS)]
     # Por serie: cada serie del ECP, mismo nombre en ambas columnas del archivo.
     ser = cta[(cta["serie"] != "") & cta["codigo"].isin([COD_INICIO, COD_CIERRE])]
     ini = ser[(ser["contexto"] == "PeriodoActual") & (ser["codigo"] == COD_INICIO)]
@@ -211,32 +179,10 @@ def identidades_por_anio(idt, enc):
 
 
 def leer():
-    enc = pd.read_csv(DIR_PROC / "encabezados.csv",
-                      dtype={"rut": str, "rut_agf": str})
-    enc = enc[enc["es_ultimo_envio"]][
-        ["archivo", "rut", "anio", "rut_agf", "nombre_agf", "nombre_fondo"]]
-
-    cta = pd.read_csv(DIR_PROC / "cuentas.csv",
-                      usecols=["archivo", "contexto", "codigo", "serie", "valor"],
-                      dtype={"serie": str})
-    cta = cta[cta["contexto"].isin(["PeriodoActual", "PeriodoAnterior"])
-              & cta["archivo"].isin(enc["archivo"])]
-
-    # Estado financiero por orden de aparicion dentro de cada archivo-contexto.
-    asignar = asignar_secciones
-    cta["estado"] = cta.groupby(["archivo", "contexto"], sort=False)["codigo"] \
-                       .transform(lambda s: asignar(list(s)))
-
-    cta["serie"] = cta["serie"].fillna("")
-    cta["valor"] = cta["valor"].fillna(0)
-    cta = cta.merge(enc[["archivo", "rut", "anio"]], on="archivo")
-    # Algunos codigos existen en dos estados (DiferenciasDeCambioNetasSobreEfectivo...
-    # en ERI y EFE; DistribucionDeBeneficios en ERI y ECP): el estado los separa.
-    # Si aun asi se repite (codigo, serie, estado), se queda el primero.
-    n0 = len(cta)
-    cta = cta.drop_duplicates(["archivo", "contexto", "estado", "codigo", "serie"])
-    if n0 - len(cta):
-        print(f"aviso: {n0 - len(cta)} cifras duplicadas (codigo, serie) descartadas")
+    """Encabezados del ultimo envio y hechos del XML (motor/hechos.py: estado por orden de los
+    codigos, duplicados (estado, codigo, serie) descartados)."""
+    enc = hechos.ultimo_envio()[["archivo", "rut", "anio", "rut_agf", "nombre_agf", "nombre_fondo"]]
+    cta = hechos.xml()[["archivo", "contexto", "codigo", "serie", "valor", "estado", "rut", "anio"]]
     return enc, cta
 
 
