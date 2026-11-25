@@ -53,6 +53,7 @@ import sys
 from pathlib import Path
 from config import CMF_HOME
 from comun.secciones import asignar_secciones
+import catalogo
 
 import pandas as pd
 
@@ -81,98 +82,10 @@ CODIGOS_CLAVE = {
 CASOS_CONOCIDOS = casos_conocidos("07")       # privado: verificacion/casos_conocidos.csv
 
 
-# Identidades (chequeo C). Cada codigo se escribe "ESTADO:Codigo" porque hay
-# codigos que existen en dos estados. total = suma(con signo) de las partes.
-def _t(txt):
-    return txt.split()
-
-IDENTIDADES = {
-    "ESF suma activos = total activo": ("ESF:TotalActivo", [(1, "ESF:" + c) for c in _t(
-        "EfectivoYEfectivoEquivalente ActivosFinancierosAValorRazonableConEfectoEnResultados "
-        "ActivosFinancierosAValorRazonableConEfectoEnResultadosEntregadosEnGarantia "
-        "ActivosFinancierosACostoAmortizado CuentasPorCobrarAIntermediarios "
-        "OtrasCuentasPorCobrar OtrosActivos")]),
-    "ESF suma pasivos = total pasivo": ("ESF:TotalPasivo", [(1, "ESF:" + c) for c in _t(
-        "PasivosFinancierosAValorRazonableConEfectoEnResultados CuentasPorAPagarIntermediarios "
-        "RescatesPorPagar RemuneracionesSociedadAdministradora "
-        "OtrosDocumentosYCuentasPorPagar OtrosPasivos")]),
-    "ESF activo - pasivo = activo neto": ("ESF:ActivoNetoAtribuibleALosParticipes",
-                                          [(1, "ESF:TotalActivo"), (-1, "ESF:TotalPasivo")]),
-    "ERI suma ingresos = total ingresos": ("ERI:TotalIngresosPerdidasNetosDeLaOperacion",
-        [(1, "ERI:" + c) for c in _t(
-        "InteresesYReajustes IngresosPorDividendos "
-        "DiferenciasDeCambioNetasSobreActivosFinancierosACostoAmortizado "
-        "DiferenciasDeCambioNetasSobreEfectivoYEfectivoEquivalente "
-        "CambiosNetosEnValorRazonableDeActivosYPasivosFinancierosAValorRazonableConEfectoEnResultados "
-        "ResultadoEnVentaDeInstrumentosFinancieros OtrosEri")]),
-    "ERI suma gastos = total gastos": ("ERI:TotalGastosDeOperacion", [(1, "ERI:" + c) for c in _t(
-        "ComisionDeAdministracion HonorariosPorCustodiaYAdministracion CostosDeTransaccion "
-        "OtrosGastosDeOperacion")]),
-    "ERI ingresos + gastos = utilidad": ("ERI:UtilidadPerdidaDeLaOperacionAntesDeImpuesto",
-        [(1, "ERI:TotalIngresosPerdidasNetosDeLaOperacion"), (1, "ERI:TotalGastosDeOperacion")]),
-    "ECP aportes + rescates = neto": ("ECP:AumentoNetoOriginadoPorTransaccionesDeCuotas",
-        [(1, "ECP:AportesDeCuotas"), (1, "ECP:RescateDeCuotas")]),
-    "ECP inicio + neto + resultado = cierre": ("ECP:ActivoNetoAtribuibleAParticipesAl31DeDiciembreValorCuota",
-        [(1, "ECP:ActivoNetoAtribuibleALosParticipesAl01DeEnero"),
-         (1, "ECP:AumentoNetoOriginadoPorTransaccionesDeCuotas"),
-         (1, "ECP:AumentoDisminucionDelActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios")]),
-    "EFE suma operacion = flujo operacion": ("EFE:FlujoNetoOriginadoPorActividadesDeLaOperacion",
-        [(1, "EFE:" + c) for c in _t(
-        "CompraDeActivosFinancieros VentaCobroDeActivosFinancieros "
-        "InteresesDiferenciasDeCambioYReajustesRecibidos LiquidacionDeInstrumentosFinancierosDerivados "
-        "DividendosRecibidos MontosPagadosASociedadAdministradoraEIntermediarios "
-        "MontosRecibidosDeSociedadAdministradoraEIntermediarios OtrosIngresosDeOperacion "
-        "OtrosGastosDeOperacionPagados")]),
-    "EFE suma financiamiento = flujo financ.": ("EFE:FlujoNetoOriginadoPorActividadesDeFinanciamiento",
-        [(1, "EFE:" + c) for c in _t("ColocacionDeCuotasEnCirculacion RescatesDeCuotasEnCirculacion Otros")]),
-    "EFE operacion + financ. = aumento neto": (
-        "EFE:AumentoNetoDeEfectivoYEfectivoEquivalente|EFE:AumentoDisminucionNetoDeEfectivoYEfectivoEquivalente",
-        [(1, "EFE:FlujoNetoOriginadoPorActividadesDeLaOperacion|EFE:FlujoNetoUtilizadoEnActividadesDeLaOperacion"),
-         (1, "EFE:FlujoNetoOriginadoPorActividadesDeFinanciamiento|EFE:FlujoNetoUtilizadoPorActividadesDeFinanciamiento")]),
-    "EFE inicial + aumento + dif.cambio = final": ("EFE:SaldoFinalDeEfectivoYEfectivoEquivalente",
-        [(1, "EFE:SaldoInicialDeEfectivoYEfectivoEquivalente"),
-         # metodo directo | metodo indirecto (76 XML 2011-2015)
-         (1, "EFE:AumentoNetoDeEfectivoYEfectivoEquivalente|EFE:AumentoDisminucionNetoDeEfectivoYEfectivoEquivalente"),
-         (1, "EFE:DiferenciasDeCambioNetasSobreEfectivoYEfectivoEquivalente")]),
-    # Identidades del generador oficial del XML (Circular 1997, planilla de la CMF) que faltaban
-    "ERI utilidad antes + impuesto = despues": ("ERI:UtilidadPerdidaDeLaOperacionDespuesDeImpuesto",
-        [(1, "ERI:UtilidadPerdidaDeLaOperacionAntesDeImpuesto"),
-         (1, "ERI:ImpuestosALasGananciasPorInversionesEnElExterior")]),
-    "ERI resultado antes distrib. = utilidad despues impuesto": (
-        "ERI:AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios",
-        [(1, "ERI:UtilidadPerdidaDeLaOperacionDespuesDeImpuesto")]),
-    "ERI resultado antes + distribucion = despues": (
-        "ERI:AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios",
-        [(1, "ERI:AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios"),
-         (1, "ERI:DistribucionDeBeneficios")]),
-    "ECP resultado antes + distribucion = despues": (
-        "ECP:AumentoDisminucionDelActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios",
-        [(1, "ECP:AumentoDisminucionDelActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios"),
-         (1, "ECP:DistribucionDeBeneficiosEnEfectivo"), (1, "ECP:DistribucionDeBeneficiosEnCuotas")]),
-    "EFE ind. suma ajustes = subtotal": ("EFE:SubtotalAjustes", [(1, "EFE:" + c) for c in _t(
-        "AjustesPorInteresesDiferenciasDeCambioYReajustesDevengadosNoRealizados "
-        "AjustesPorIngresosPorDividendosNoRealizados "
-        "AjustesPorDiferenciasDeCambioNoRealizadasSobreEfectivoYEfectivoEquivalente "
-        "AjustesPorOtrasVariacionesDeResultadosNoRealizadas")]),
-    "EFE ind. suma variaciones = subtotal": ("EFE:SubtotalEfectivoUtilizadoEnOperaciones", [(1, "EFE:" + c) for c in _t(
-        "AumentoDisminucionNetaDeCuentasPorPagarCobrarALaSociedadAdministradora "
-        "AumentoDisminucionNetaDeCuentasPorPagarCobrarAIntermediarios AumentoNetoDeOtrosDeudoresYAcreedores "
-        "AumentoNetoDeActivosFinancierosAValorRazonableConEfectoEnResultados "
-        "AumentoNetoDePasivosFinancierosAValorRazonableConEfectoEnResultados")]),
-    "EFE ind. resultado + ajustes + variaciones = flujo operacion": ("EFE:FlujoNetoUtilizadoEnActividadesDeLaOperacion",
-        [(1, "EFE:AumentoDisminucionDelActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeLaDistribucionDeBeneficios"),
-         (1, "EFE:SubtotalAjustes"), (1, "EFE:SubtotalEfectivoUtilizadoEnOperaciones")]),
-    "EFE ind. suma financiamiento = flujo financ.": ("EFE:FlujoNetoUtilizadoPorActividadesDeFinanciamiento",
-        [(1, "EFE:" + c) for c in _t("DistribucionesPagadasAParticipes ColocacionDeCuotasEnCirculacion "
-                                       "RescateDeCuotasEnCirculacion Otros")]),
-    "cruce ESF activo neto = ECP cierre": ("ESF:ActivoNetoAtribuibleALosParticipes",
-        [(1, "ECP:ActivoNetoAtribuibleAParticipesAl31DeDiciembreValorCuota")]),
-    "cruce ESF efectivo = EFE saldo final": ("ESF:EfectivoYEfectivoEquivalente",
-        [(1, "EFE:SaldoFinalDeEfectivoYEfectivoEquivalente")]),
-    "cruce ERI resultado = ECP resultado": (
-        "ERI:AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios",
-        [(1, "ECP:AumentoDisminucionDelActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios")]),
-}
+# Identidades (chequeo C): total = suma con signo de las partes, "ESTADO:Codigo" (hay codigos en dos
+# estados) y "A|B" para codigos alternativos (EFE directo | indirecto). Viven en catalogo/fm/reglas.csv
+# (tipos suma y cruce): las del generador oficial de la CMF y los cruces entre estados del proyecto.
+IDENTIDADES = catalogo.identidades_07()
 TOL_IDENTIDAD = 1       # diferencias de 1 se toleran (redondeo de sumas)
 
 
@@ -221,15 +134,8 @@ def chequeo_identidades(cta):
     return idt
 
 
-ENTRE_COLUMNAS = {
-    # identidad: (codigo apertura en PeriodoActual, codigo cierre en PeriodoAnterior)
-    "EFE inicial (act) = final (ant)": ("EFE:SaldoInicialDeEfectivoYEfectivoEquivalente",
-                                        "EFE:SaldoFinalDeEfectivoYEfectivoEquivalente"),
-    "ECP inicio total (act) = cierre (ant)": ("ECP:ActivoNetoAtribuibleALosParticipesAl01DeEnero",
-                                              "ECP:ActivoNetoAtribuibleAParticipesAl31DeDiciembreValorCuota"),
-    "ECP inicio (act) = ESF activo neto (ant)": ("ECP:ActivoNetoAtribuibleALosParticipesAl01DeEnero",
-                                                 "ESF:ActivoNetoAtribuibleALosParticipes"),
-}
+# apertura del periodo actual = cierre del anterior (catalogo/fm/reglas.csv, tipo continuidad)
+ENTRE_COLUMNAS = catalogo.entre_columnas_07()
 
 
 def chequeo_entre_columnas(cta):

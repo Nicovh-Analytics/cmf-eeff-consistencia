@@ -41,6 +41,7 @@ from config import casos_conocidos, umbral_materialidad, CMF_HOME
 from comun.emparejar import leer_y_emparejar
 from comun.lector_espacial import cargar_coords
 from comun.secciones import asignar_secciones
+import catalogo
 
 BASE_DIR = Path(__file__).resolve().parent
 DIR_PROC = CMF_HOME / "procesado"
@@ -49,54 +50,13 @@ TOL = 2                     # diferencia tolerada al sumar lineas (redondeo)
 
 MAX_PARTES_AGREGACION = 3   # una cifra XML puede ser suma de hasta 3 lineas PDF
 
-# Subtotales del EFE: codigo XML, glosa esperada en el PDF, codigos componentes.
-SUBTOTALES = {
-    "operacion": dict(
-        estado="EFE",
-        codigo="FlujoNetoOriginadoPorActividadesDeLaOperacion",
-        glosa=re.compile(r"flujo.*operaci", re.I),
-        partes=["CompraDeActivosFinancieros", "VentaCobroDeActivosFinancieros",
-                "InteresesDiferenciasDeCambioYReajustesRecibidos",
-                "LiquidacionDeInstrumentosFinancierosDerivados", "DividendosRecibidos",
-                "MontosPagadosASociedadAdministradoraEIntermediarios",
-                "MontosRecibidosDeSociedadAdministradoraEIntermediarios",
-                "OtrosIngresosDeOperacion", "OtrosGastosDeOperacionPagados"]),
-    "financiamiento": dict(
-        estado="EFE",
-        codigo="FlujoNetoOriginadoPorActividadesDeFinanciamiento",
-        glosa=re.compile(r"flujo.*financiamiento", re.I),
-        partes=["ColocacionDeCuotasEnCirculacion", "RescatesDeCuotasEnCirculacion", "Otros"]),
-    # DistribucionDeBeneficios NO va como parte: es el mismo codigo del ERI/ECP y
-    # tapaba un caso conocido de agregacion (distribuciones metidas en Otros del EFE).,
-    # --- ESF ---
-    "total_activo": dict(
-        estado="ESF",
-        codigo="TotalActivo", glosa=re.compile(r"totalactivos?(?!neto)", re.I),
-        partes=["EfectivoYEfectivoEquivalente", "ActivosFinancierosAValorRazonableConEfectoEnResultados",
-                "ActivosFinancierosAValorRazonableConEfectoEnResultadosEntregadosEnGarantia",
-                "ActivosFinancierosACostoAmortizado", "CuentasPorCobrarAIntermediarios",
-                "OtrasCuentasPorCobrar", "OtrosActivos"]),
-    "total_pasivo": dict(
-        estado="ESF",
-        codigo="TotalPasivo", glosa=re.compile(r"totalpasivos?", re.I),
-        partes=["PasivosFinancierosAValorRazonableConEfectoEnResultados", "CuentasPorAPagarIntermediarios",
-                "RescatesPorPagar", "RemuneracionesSociedadAdministradora",
-                "OtrosDocumentosYCuentasPorPagar", "OtrosPasivos"]),
-    # --- ERI ---
-    "total_ingresos": dict(
-        estado="ERI",
-        codigo="TotalIngresosPerdidasNetosDeLaOperacion", glosa=re.compile(r"otal,?(de)?\(?(p[eé]rdidas?\)?/?)?ingresos?", re.I),
-        partes=["InteresesYReajustes", "IngresosPorDividendos",
-                "DiferenciasDeCambioNetasSobreActivosFinancierosACostoAmortizado",
-                "DiferenciasDeCambioNetasSobreEfectivoYEfectivoEquivalente",
-                "CambiosNetosEnValorRazonableDeActivosYPasivosFinancierosAValorRazonableConEfectoEnResultados",
-                "ResultadoEnVentaDeInstrumentosFinancieros", "OtrosEri"]),
-    "total_gastos": dict(
-        estado="ERI",
-        codigo="TotalGastosDeOperacion", glosa=re.compile(r"totalgastos", re.I),
-        partes=["ComisionDeAdministracion", "HonorariosPorCustodiaYAdministracion",
-                "CostosDeTransaccion", "OtrosGastosDeOperacion"]),
-}
+# Subtotales que se reconstruyen desde el PDF: codigo XML y codigos de sus partes (catalogo/fm/reglas.csv,
+# reglas de suma con clave_03b) y glosa esperada en el PDF (catalogo/fm/conceptos.csv).
+# DistribucionDeBeneficios NO es parte del financiamiento del EFE: es el mismo codigo del ERI/ECP y
+# tapaba un caso conocido de agregacion (distribuciones metidas en Otros del EFE).
+SUBTOTALES = {k: dict(**catalogo.subtotal_03b(k), glosa=re.compile(catalogo.glosa(k), re.I))
+              for k in ("operacion", "financiamiento", "total_activo", "total_pasivo",
+                        "total_ingresos", "total_gastos")}
 
 # Las regex se aplican sobre el texto SIN espacios (norm): hay PDFs que se
 # extraen pegados ("Flujonetoutilizadoenactividades...") y con \s+ no calzaban.

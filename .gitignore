@@ -11,3 +11,4 @@ verificacion/
 .env.*
 .venv/
 *.log
+.pytest_cache/
