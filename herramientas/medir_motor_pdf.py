@@ -29,10 +29,32 @@ CTX = {"actual": "PeriodoActual", "anterior": "PeriodoAnterior"}
 
 
 def motor_pdf(r_cat: pd.DataFrame) -> pd.DataFrame:
+    """Motor sobre el PDF con el signo impreso y con el signo oficial en las partes; cuadra = con
+    cualquiera de los dos (el signo de presentacion no es un error de cifra)."""
     ident = {n: (t, catalogo.terminos(p)) for n, t, p in zip(r_cat["nombre"], r_cat["total"], r_cat["partes"])}
-    m = reglas.por_columna(hechos.pdf(), identidades=ident).reset_index()
-    m["cuadra_motor"] = (m["total"].abs() - m["suma_partes"].abs()).abs() <= TOL
+    h = hechos.pdf()
+    a = reglas.por_columna(h, identidades=ident).reset_index()
+    b = reglas.por_columna(h, identidades=ident, signo_oficial=True).reset_index()
+    m = a.merge(b[["archivo", "contexto", "identidad", "suma_partes"]].rename(columns={"suma_partes": "suma_signo"}),
+                on=["archivo", "contexto", "identidad"])
+    cuadra = lambda t, s: (t.abs() - s.abs()).abs() <= TOL
+    m["cuadra_impreso"] = cuadra(m["total"], m["suma_partes"])
+    m["cuadra_motor"] = m["cuadra_impreso"] | cuadra(m["total"], m["suma_signo"])
     return m.rename(columns={"total": "total_motor", "suma_partes": "suma_motor"})
+
+
+def causa(r) -> str:
+    """Por que el motor no cuadra donde la etapa si (o al reves)."""
+    t, s, s2 = abs(r["total_motor"]), abs(r["suma_motor"]), abs(r["suma_signo"])
+    if r["cuadra_motor"] and not r["cuadra_impreso"]:
+        return "signo de presentacion (cuadra con el signo oficial)"
+    if r["cuadra_motor"]:
+        return "motor cuadra, la etapa no"
+    if t and abs(s - 2 * t) <= TOL:
+        return "suma = 2 x total (un subtotal o el total quedo como parte)"
+    if not s:
+        return "partes sin codigo (suma 0)"
+    return "otro (codigo en otra linea o linea sin codigo)"
 
 
 def main():
@@ -60,7 +82,9 @@ def main():
           .round(3).to_string(), "\n")
     print("cuadra 03b x cuadra motor:")
     print(pd.crosstab(ev["cuadra_03b"], ev["cuadra_motor"], margins=True).to_string(), "\n")
-    desac = ev[ev["cuadra_03b"] != ev["cuadra_motor"]]
+    desac = ev[ev["cuadra_03b"] != ev["cuadra_motor"]].copy()
+    print("causa de los desacuerdos:")
+    print(desac.apply(causa, axis=1).value_counts().to_string(), "\n")
     print("desacuerdos (muestra):")
     print(desac[["rut", "anio", "subtotal", "columna", "subtotal_pdf", "suma_lineas_pdf", "total_motor", "suma_motor",
                  "cuadra_03b", "cuadra_motor"]].head(20).to_string(index=False), "\n")
@@ -81,6 +105,13 @@ def main():
     print(evc.groupby("identidad").apply(lambda g: pd.Series(dict(
         n=len(g), cuadra_03c=g["cuadra_03c"].mean(), cuadra_motor=g["cuadra_motor"].mean(),
         acuerdo=(g["cuadra_03c"] == g["cuadra_motor"]).mean())), include_groups=False).round(3).to_string(), "\n")
+    print("03c con el signo impreso solamente (sin signo oficial):",
+          f"{(evc['cuadra_03c'] == evc['cuadra_impreso']).mean():.3%} de acuerdo;",
+          f"con signo oficial: {(evc['cuadra_03c'] == evc['cuadra_motor']).mean():.3%}")
+    d3 = evc[evc["cuadra_03c"] != evc["cuadra_motor"]]
+    if len(d3):
+        print("causa de los desacuerdos 03c:")
+        print(d3.apply(causa, axis=1).value_counts().to_string())
     print("desacuerdos 03c (muestra):")
     print(evc[evc["cuadra_03c"] != evc["cuadra_motor"]][["rut", "anio", "identidad", "columna", "dif_pdf",
           "total_motor", "suma_motor", "cuadra_03c", "cuadra_motor"]].head(15).to_string(index=False))

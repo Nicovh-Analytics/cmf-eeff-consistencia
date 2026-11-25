@@ -36,3 +36,17 @@ def test_entre_columnas():
     ])
     r = reglas.entre_columnas(h, pares={"cont": ("EFE:Inicial", "EFE:Final")}).reset_index()
     assert list(r["archivo"]) == ["a"] and (r["total"] - r["suma_partes"]).iloc[0] == 2
+
+
+def test_signo_oficial_en_partes():
+    """Gastos impresos sin parentesis: con el signo oficial ("(-)" en el modelo) la utilidad cuadra."""
+    h = hechos([
+        ("p", "PeriodoActual", "ERI", "TotalIngresosPerdidasNetosDeLaOperacion", "", 100.0),
+        ("p", "PeriodoActual", "ERI", "TotalGastosDeOperacion", "", 30.0),           # impreso positivo
+        ("p", "PeriodoActual", "ERI", "UtilidadPerdidaDeLaOperacionAntesDeImpuesto", "", 70.0),
+    ])
+    idt = {"u": ("ERI:UtilidadPerdidaDeLaOperacionAntesDeImpuesto",
+                 [(1, "ERI:TotalIngresosPerdidasNetosDeLaOperacion"), (1, "ERI:TotalGastosDeOperacion")])}
+    impreso = reglas.por_columna(h, identidades=idt).iloc[0]
+    oficial = reglas.por_columna(h, identidades=idt, signo_oficial=True).iloc[0]
+    assert impreso["suma_partes"] == 130 and oficial["suma_partes"] == 70

@@ -10,6 +10,11 @@ Una regla es total = suma con signo de partes, con codigos "ESTADO:Codigo" y alt
                               mismo archivo; solo donde ambos estan informados
 
 Devuelven: archivo, [contexto,] identidad (nombre de la regla), total, suma_partes.
+
+signo_oficial (para el PDF): el PDF imprime signos de presentacion (gastos sin parentesis, rescates
+positivos). Con signo_oficial=True cada PARTE cuyo signo en el modelo oficial es estricto ("+" o "-",
+catalogo/fm/conceptos.csv) se toma como signo * |valor|. Los totales y las partes "+ o -" quedan como se
+imprimieron: el modelo marca el flujo neto como "(+)" aunque pueda ser negativo.
 """
 import pandas as pd
 
@@ -32,9 +37,22 @@ def _columna(w: pd.DataFrame, cod: str):
     return v
 
 
-def por_columna(hechos: pd.DataFrame, entidad: str = "fm", identidades: dict | None = None) -> pd.DataFrame:
+def signos_estrictos(entidad: str = "fm") -> dict:
+    """{'ERI:ComisionDeAdministracion': -1, 'EFE:VentaCobroDeActivosFinancieros': 1, ...}"""
+    c = catalogo.conceptos(entidad)
+    c = c[c["signo"].isin(["+", "-"])]
+    return {f"{e}:{k}": (1 if s == "+" else -1) for e, k, s in zip(c["estado"], c["codigo"], c["signo"])}
+
+
+def por_columna(hechos: pd.DataFrame, entidad: str = "fm", identidades: dict | None = None,
+                signo_oficial: bool = False) -> pd.DataFrame:
     identidades = catalogo.identidades_07(entidad) if identidades is None else identidades
     w = _totales(hechos).pivot_table(index=["archivo", "contexto"], columns="col", values="valor", aggfunc="first")
+    if signo_oficial:
+        totales = {a for t, _ in identidades.values() for a in t.split("|")}
+        for col, sg in signos_estrictos(entidad).items():
+            if col in w and col not in totales:
+                w[col] = sg * w[col].abs()
     filas = []
     for nombre, (total, partes) in identidades.items():
         t = _columna(w, total)
