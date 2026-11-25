@@ -78,3 +78,37 @@ def entre_columnas(hechos: pd.DataFrame, entidad: str = "fm", pares: dict | None
         ambos = w[a].notna() & w[c].notna()
         filas.append(pd.DataFrame({"identidad": nombre, "total": w.loc[ambos, a], "suma_partes": w.loc[ambos, c]}))
     return pd.concat(filas) if filas else pd.DataFrame(columns=["identidad", "total", "suma_partes"])
+
+
+def evaluar(id_regla: str, valores: dict, entidad: str = "fm") -> tuple:
+    """Una regla sobre cifras sueltas (una columna de un documento), con el signo como se imprimio.
+
+    valores: {'ESTADO:Codigo': cifra} con el codigo principal de cada termino. Las partes con signo
+    oficial estricto se toman como signo * |cifra|; en un cruce (la misma cifra en dos estados) se
+    comparan los montos sin signo. Devuelve
+    (dif, laxa):
+      dif   suma de partes - total (cruce: total - parte, la convencion de presentacion del 03c)
+      laxa  la menor diferencia admitiendo UN signo de presentacion: el total invertido o una parte sin
+            signo estricto invertida (perdida impresa sin parentesis, ingresos netos negativos). Decide
+            si cuadra: un signo invertido no es un error de cifra.
+    """
+    r = catalogo.regla(id_regla, entidad)
+    sig = signos_estrictos(entidad)
+
+    def norm(termino, normalizar=True):
+        cod = termino.split("|")[0]
+        v = valores[cod]
+        s = sig.get(cod) if normalizar else None
+        return (s * abs(v), False) if s else (v, True)          # (cifra, se puede invertir)
+
+    if r["tipo"] == "cruce":          # la misma cifra en dos estados: se compara el monto, sin signo
+        t = abs(valores[r["total"].split("|")[0]])
+        partes = [(sg, abs(valores[c.split("|")[0]]), False) for sg, c in catalogo.terminos(r["partes"])]
+    else:
+        t, _ = norm(r["total"], normalizar=False)
+        partes = [(sg, *norm(c)) for sg, c in catalogo.terminos(r["partes"])]
+    suma = sum(sg * v for sg, v, _ in partes)
+    candidatos = [abs(suma - t), abs(suma + t)]
+    candidatos += [abs(suma - 2 * sg * v - t) for sg, v, libre in partes if libre]
+    dif = (t - suma) if r["tipo"] == "cruce" else (suma - t)
+    return dif, min(candidatos)

@@ -50,3 +50,28 @@ def test_signo_oficial_en_partes():
     impreso = reglas.por_columna(h, identidades=idt).iloc[0]
     oficial = reglas.por_columna(h, identidades=idt, signo_oficial=True).iloc[0]
     assert impreso["suma_partes"] == 130 and oficial["suma_partes"] == 70
+
+
+def test_evaluar_igual_a_las_formulas_del_03c():
+    """motor.reglas.evaluar reproduce las formulas que el 03c tenia escritas a mano (dif y laxa)."""
+    import itertools
+    import random
+    import catalogo
+    formulas = {
+        "esf_activo_neto": (["total_activo", "total_pasivo", "activo_neto"],
+                            lambda a, p, n: abs(a) - abs(p) - n,
+                            lambda a, p, n: min(abs(abs(a) - abs(p) - n), abs(abs(a) - abs(p) + n))),
+        "eri_utilidad": (["total_ingresos", "total_gastos", "utilidad_operacion"],
+                         lambda i, g, u: i - abs(g) - u,
+                         lambda i, g, u: min(abs(i - abs(g) - u), abs(i - abs(g) + u), abs(-i - abs(g) - u))),
+        "cruce_efectivo_efe": (["efectivo", "saldo_final"],
+                               lambda e, s: abs(e) - abs(s), lambda e, s: abs(abs(e) - abs(s))),
+    }
+    random.seed(0)
+    for rid, (terms, fd, fl) in formulas.items():
+        cods = [f"{catalogo.estado(k)}:{catalogo.codigo(k)}" for k in terms]
+        casos = list(itertools.product([0, 3, -3, 1e9, -1e9], repeat=len(terms)))
+        casos += [tuple(random.uniform(-1e6, 1e6) for _ in terms) for _ in range(500)]
+        for c in casos:
+            d, l = reglas.evaluar(rid, dict(zip(cods, c)))
+            assert abs(d - fd(*c)) < 1e-6 and abs(l - fl(*c)) < 1e-6, (rid, c)

@@ -45,6 +45,8 @@ from config import CMF_HOME, casos_conocidos, umbral_materialidad
 from comun.emparejar import leer_y_emparejar
 from comun.lector_espacial import cargar_coords
 from comun.secciones import asignar_secciones
+import catalogo
+from motor import reglas
 
 m03b = importlib.import_module("validaciones.estructura.03b_estructura")
 norm, TOL, SUB03B = m03b.norm, m03b.TOL, m03b.SUBTOTALES
@@ -85,22 +87,24 @@ def dudosa(l, xa, xb):
     pares = [(p or 0, x) for p, x in ((l["actual"], xa), (l["anterior"], xb)) if x is not None]
     return len(pares) == 2 and all(abs(abs(p) - abs(x)) > TOL for p, x in pares)
 
-# dif estricta (convencion habitual de presentacion) y laxa (signo de presentacion
-# distinto: perdida impresa sin parentesis). Solo la laxa decide si cuadra.
-IDENTIDADES = {
-    "activo_menos_pasivo": dict(
-        terminos=["total_activo", "total_pasivo", "activo_neto"],
-        dif=lambda a, p, n: abs(a) - abs(p) - n,
-        laxa=lambda a, p, n: min(abs(abs(a) - abs(p) - n), abs(abs(a) - abs(p) + n))),
-    "ingresos_menos_gastos": dict(
-        terminos=["total_ingresos", "total_gastos", "utilidad_operacion"],
-        dif=lambda i, g, u: i - abs(g) - u,
-        laxa=lambda i, g, u: min(abs(i - abs(g) - u), abs(i - abs(g) + u), abs(-i - abs(g) - u))),
-    "efectivo_esf_efe": dict(
-        terminos=["efectivo", "saldo_final"],
-        dif=lambda e, s: abs(e) - abs(s),
-        laxa=lambda e, s: abs(abs(e) - abs(s))),
-}
+# Identidades: la regla vive en el catalogo (catalogo/fm/reglas.csv, clave_03c) y la evalua el motor
+# (motor/reglas.evaluar): dif con la convencion de presentacion y laxa, que admite un signo de
+# presentacion (total o una parte sin signo estricto invertidos). Solo la laxa decide si cuadra.
+# terminos: el orden en que se informan los terminos (pdf, xml, metodo_*, terminos_distintos_xml).
+TERMINOS = {"activo_menos_pasivo": ["total_activo", "total_pasivo", "activo_neto"],
+            "ingresos_menos_gastos": ["total_ingresos", "total_gastos", "utilidad_operacion"],
+            "efectivo_esf_efe": ["efectivo", "saldo_final"]}
+_REGLA = {r["clave_03c"]: r["id"] for _, r in catalogo.reglas().iterrows() if r["clave_03c"]}
+
+
+def _evaluador(nombre):
+    cods = [f"{catalogo.estado(k)}:{catalogo.codigo(k)}" for k in TERMINOS[nombre]]
+    def ev(*cifras):
+        return reglas.evaluar(_REGLA[nombre], dict(zip(cods, cifras)))
+    return dict(terminos=TERMINOS[nombre], dif=lambda *c: ev(*c)[0], laxa=lambda *c: ev(*c)[1])
+
+
+IDENTIDADES = {n: _evaluador(n) for n in TERMINOS}
 
 
 def resolver_codigos(todos):
