@@ -105,6 +105,9 @@ def _evaluador(nombre):
 
 
 IDENTIDADES = {n: _evaluador(n) for n in TERMINOS}
+# termino que es el total de cada regla (el lado izquierdo de la identidad en el catalogo)
+_CLAVE = {f"{e}:{c}": k for e, c, k in catalogo.conceptos()[["estado", "codigo", "clave"]].itertuples(index=False) if k}
+TOTAL = {n: _CLAVE[catalogo.regla(_REGLA[n])["total"].split("|")[0]] for n in TERMINOS}
 
 
 def resolver_codigos(todos):
@@ -134,7 +137,12 @@ def clasificar(r, umbral):
     if r["cuadra_xml"] is None:
         clase = "revisar_sin_xml"
     elif not dist:
-        clase = "probable_error_ambos" if r["cuadra_xml"] is False else "revisar_signo"
+        # Todos los terminos iguales al XML en valor absoluto y el XML cuadra: un problema de signo.
+        # Si el total (la utilidad, el activo neto) tiene el signo contrario al XML, el PDF informa el
+        # resultado al reves (perdida por ganancia): error del PDF, no presentacion. Revision: 2 de 2, el
+        # ECP del mismo PDF trae el resultado con el signo correcto y se corrigio al anio siguiente (D-CU19)
+        clase = ("probable_error_ambos" if r["cuadra_xml"] is False else
+                 "probable_error_pdf" if r.get("signo_total_invertido") else "revisar_signo")
     elif len(dist) == 1 and r["cuadra_xml"] and r[f"metodo_{dist[0]}"] != "solo_glosa":
         clase = "probable_error_pdf"
     else:
@@ -252,6 +260,9 @@ def main():
                             xml=" | ".join(f"{n}={v['xml']}" for n, v in zip(cfg["terminos"], ts)))
                 for n, v in zip(cfg["terminos"], ts):
                     fila[f"metodo_{n}"] = v["metodo"]
+                t_total = ts[cfg["terminos"].index(TOTAL[nombre])]
+                fila["signo_total_invertido"] = bool(xml_ok and t_total["pdf"] and t_total["xml"]
+                                                     and (t_total["pdf"] > 0) != (t_total["xml"] > 0))
                 fila["clase"] = clasificar(fila, umbral_materialidad(r.moneda))
                 # Si el termino distinto es un total del 03b, el 03b ya lo marco (igual_xml=False):
                 # lo nuevo de esta pasada son las lineas nuevas y los errores "ambos".
