@@ -29,7 +29,7 @@ Nadie verifica de forma sistemática que digan lo mismo. Consultada por este pro
 | **precisión** (122 casos revisados a mano en tres muestras aleatorias) | **96,8% ± 2,6** (PDF 97%, XML 95%); la última muestra, revisada en una sola pasada: 25/25 |
 | diferencias de presentación (no son error: reexpresiones, reclasificaciones, desglose distinto, rótulos) | 676 |
 
-Un **error** es una cifra que no cuadra con su propio documento, o que difiere entre documentos cuando uno de ellos es demostrablemente el malo. Por administradora, la tasa de celdas con error es 1,67%: comparando el intervalo de confianza de cada una con esa tasa, 5 están por debajo (0,6–0,9%), 4 por encima (2,7–4,2%), 6 no se distinguen y 12 tienen pocas celdas para decirlo. No se publican resultados por fondo ni por administradora (ver *Uso responsable*). Las cifras salen de `consolidacion/05_resumen.py`; el detalle de cada etapa está más abajo.
+Un **error** es una cifra que no cuadra con su propio documento, o que difiere entre documentos cuando uno de ellos es demostrablemente el malo. Por administradora, la tasa de celdas con error es 1,68%: comparando el intervalo de confianza de cada una con esa tasa, 5 están por debajo (0,6–0,9%), 4 por encima (2,7–4,2%), 6 no se distinguen y 12 tienen pocas celdas para decirlo. No se publican resultados por fondo ni por administradora (ver *Uso responsable*). Las cifras salen de `consolidacion/05_resumen.py`; el detalle de cada etapa está más abajo.
 
 ## Qué hace
 
