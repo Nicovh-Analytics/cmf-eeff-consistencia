@@ -20,18 +20,24 @@ RAIZ = Path(__file__).resolve().parent
 
 # (id, script, descripcion, automatica)
 ETAPAS = [
-("01",  "extraccion/01_recolector.py",             "descarga XML/PDF desde CMF (red, lento)", False, []),
-("02",  "extraccion/02_parser.py",                 "XML -> tablas en procesado/",             True,  []),
-("07",  "validaciones/continuidad/07_continuidad.py", "continuidad entre periodos",           True,  []),
-("03",  "validaciones/fidelidad/03_cruce_PDF.py",  "cruce XML vs PDF (texto)",                True,  []),
-("03a", "validaciones/fidelidad/03a_coordenadas.py", "coordenadas del PDF",                  True,  []),
-("03o", "validaciones/fidelidad/03a_ocr.py", "OCR de paginas imagen (requiere Tesseract)", True, []),
-("03b", "validaciones/estructura/03b_estructura.py", "subtotales e identidades",            True,  []),
-("03c", "validaciones/estructura/03c_identidades.py", "Identidades entre estados del PDF", True, []),
-("03d", "validaciones/estructura/03d_ecp.py", "ECP leido desde el PDF (series y total)", True, []),
-("03f", "validaciones/fidelidad/03f_documento.py", "comparan el PDF con el XML linea a linea", True, []),
-("04",  "consolidacion/04_candidatos.py",          "consolida candidatos",                    True,  []),
-("06",  "consolidacion/06_ficha.py",               "fichas de verificacion (requiere muestra)", False, ["--muestra"]),
+("01",  "extraccion/01_recolector.py",                 "descarga XML/PDF desde CMF (red, lento)",        False, []),
+("02",  "extraccion/02_parser.py",                     "XML -> tablas en procesado/",                    True,  []),
+("07",  "validaciones/continuidad/07_continuidad.py",  "XML: continuidad e identidades oficiales",       True,  []),
+("03",  "validaciones/fidelidad/03_cruce_PDF.py",      "cruce XML vs PDF (texto)",                       True,  []),
+("03a", "validaciones/fidelidad/03a_coordenadas.py",   "coordenadas del PDF",                            True,  []),
+("03o", "validaciones/fidelidad/03a_ocr.py",           "OCR de paginas imagen (requiere Tesseract)",     True,  []),
+("03b", "validaciones/estructura/03b_estructura.py",   "subtotales del PDF (footing)",                   True,  []),
+("03c", "validaciones/estructura/03c_identidades.py",  "identidades entre estados del PDF",              True,  []),
+("03d", "validaciones/estructura/03d_ecp.py",          "ECP leido desde el PDF (series y total)",        True,  []),
+("03e", "validaciones/estructura/03e_comparativos.py", "4 versiones: PDF/XML de t y comparativo t+1",    True,  []),
+("03f", "validaciones/fidelidad/03f_documento.py",     "documento: periodo, PDF sin estados",            True,  []),
+("03g", "validaciones/estructura/03g_localizacion.py", "cual cifra esta mala si un subtotal no suma",    True,  []),
+("04",  "consolidacion/04_candidatos.py",              "candidatos PDF vs XML (espejo)",                 True,  []),
+("04b", "consolidacion/04b_casos.py",                  "casos por linea con sus 4 versiones",            True,  []),
+("04c", "consolidacion/04c_casos_unicos.py",           "conteo unico de casos",                          True,  []),
+("04d", "consolidacion/04d_perfil_estado.py",          "escalera de verificacion por estado y AGF",      True,  []),
+("05",  "consolidacion/05_resumen.py",                 "cifras de portada v1",                           True,  []),
+("06",  "consolidacion/06_ficha.py",                   "fichas de verificacion (requiere muestra)",      False, ["--muestra"]),
 ]
 IDS = [e[0] for e in ETAPAS]
 
@@ -69,8 +75,8 @@ def main() -> int:
         return 1
     print(f"datos: {CMF_HOME}")
 
-    for _, script, _, _, args in sel:
-        if correr(script, args) != 0:
+    for _, script, _, _, extra in sel:
+        if correr(script, extra) != 0:
             print("pipeline detenido")
             return 1
     return 0

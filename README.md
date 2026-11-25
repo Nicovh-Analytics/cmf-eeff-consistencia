@@ -4,7 +4,7 @@
 
 Este proyecto descarga los estados financieros anuales de los fondos mutuos chilenos publicados por la CMF (2011–2025) y los audita en forma automática, con los mismos criterios que usaría un auditor: cuadraturas, consistencia entre documentos y continuidad entre períodos.
 
-> *English summary: an automated audit of ~4,500 annual financial statements of Chilean mutual funds published by the regulator (CMF). It cross-checks the machine-readable XML against the signed PDF, verifies continuity between years, recomputes subtotals of the balance sheet, income statement and cash-flow statement directly from the PDF using word coordinates (OCR for scanned pages), and checks accounting identities across statements. Every flagging rule was validated against the original documents by manual review.*
+> *English summary: an automated audit of ~4,500 annual financial statements of Chilean mutual funds published by the regulator (CMF). It cross-checks the machine-readable XML against the signed PDF, verifies continuity between years, recomputes subtotals of the balance sheet, income statement and cash-flow statement directly from the PDF using word coordinates (OCR for scanned pages), and checks accounting identities across statements. Every flagging rule was validated against the original documents by manual review. Result (v1): 350 errors in 281 of 4,512 fund-years, at 96.8% ± 2.6 precision on 122 hand-checked cases; the regulator confirmed it does not check XML against PDF on filing.*
 
 ---
 
@@ -15,7 +15,21 @@ Cada fondo mutuo entrega a la CMF dos versiones de sus estados financieros:
 - un **XML** estructurado, que pasa por las validaciones físicas y lógicas de la CMF, y
 - un **PDF** con los estados auditados y firmados, que es lo que lee el inversionista.
 
-Nadie verifica de forma sistemática que digan lo mismo. Tampoco que el "año anterior" que muestra cada reporte coincida con lo que se auditó ese año, ni que el PDF sume.
+Nadie verifica de forma sistemática que digan lo mismo. Consultada por este proyecto, la CMF respondió (noviembre de 2026) que no existe un procedimiento de verificación de correspondencia entre las cifras del XML y las del PDF de un mismo envío al recibirlos. Tampoco se verifica que el "año anterior" que muestra cada reporte coincida con lo que se auditó ese año, ni que el PDF sume.
+
+## En cifras (v1, fondos mutuos)
+
+| | |
+|---|---|
+| estados financieros anuales revisados | **4.512** fondo-año (432 fondos, 27 administradoras, 2011–2025) |
+| celdas fondo-año × estado evaluables | 98,4% (19 PDF no se pueden verificar: 0 páginas, solo la opinión del auditor o escaneados sin texto) |
+| celdas evaluables sin ningún error | 95,7% |
+| **errores**, contados una vez aunque los vean varias etapas | **350**: 234 en el PDF, 91 en el XML, 25 de continuidad |
+| fondo-año con al menos un error | 281 (6,2%) |
+| **precisión** (122 casos revisados a mano en tres muestras aleatorias) | **96,8% ± 2,6** (PDF 97%, XML 95%); la última muestra, revisada en una sola pasada: 25/25 |
+| diferencias de presentación (no son error: reexpresiones, reclasificaciones, desglose distinto, rótulos) | 676 |
+
+Un **error** es una cifra que no cuadra con su propio documento, o que difiere entre documentos cuando uno de ellos es demostrablemente el malo. Por administradora, la tasa de celdas con error es 1,67%: comparando el intervalo de confianza de cada una con esa tasa, 5 están por debajo (0,6–0,9%), 4 por encima (2,7–4,2%), 6 no se distinguen y 12 tienen pocas celdas para decirlo. No se publican resultados por fondo ni por administradora (ver *Uso responsable*). Las cifras salen de `consolidacion/05_resumen.py`; el detalle de cada etapa está más abajo.
 
 ## Qué hace
 
@@ -29,15 +43,22 @@ Nadie verifica de forma sistemática que digan lo mismo. Tampoco que el "año an
 | 3b | `03b_estructura.py` + `lector_espacial.py` | **Estructura:** reconstruye EFE, ESF y ERI desde el PDF y verifica que cada subtotal sea la suma de sus líneas. |
 | 3c | `03c_identidades.py` | **Identidades entre estados:** activo − pasivo = activo neto, ingresos − gastos = utilidad, efectivo del ESF = saldo final del EFE. |
 | 3d | `03d_ecp.py` + `lector_multicolumna.py` | **Estado de cambios en el activo neto (ECP):** lo lee desde el PDF con una columna por serie y verifica cada serie, el total y su cruce con el ESF y con el año anterior. |
+| 3e | `03e_comparativos.py` | **Cuatro versiones de cada monto:** PDF y XML del año, y el comparativo de ambos en el informe siguiente; la versión que no calza dice qué documento cambió. |
+| 3f | `03f_documento.py` | **Documento:** que el PDF y el XML sean del fondo y período declarados; PDF sin estados legibles. |
+| 3g | `03g_localizacion.py` | **Localización:** cuando un subtotal del PDF no suma, sigue la cadena hasta el efectivo del balance para decir qué cifra está mala (el subtotal impreso o una línea) o si es lectura. |
 | 4 | `04_candidatos.py` | Tipifica las discrepancias del cruce (redistribución entre series, signo invertido, rótulo, agregación), les asigna gravedad y aplica materialidad. |
+| 4b | `04b_casos.py` | Agrupa en casos las señales de los comparativos con la misma diferencia. |
+| 4c | `04c_casos_unicos.py` | **Conteo único:** junta las señales de todas las etapas en casos (cada error cuenta una vez) y los tipifica: error del PDF, del XML, de continuidad, o presentación. |
+| 4d | `04d_perfil_estado.py` | **Escalera de verificación** por fondo-año y estado: qué se pudo verificar y qué quedó limpio. |
+| 5 | `05_resumen.py` | Cifras de portada. |
 | 6 | `06_ficha.py` | Ficha Excel por caso: XML, PDF y año anterior, lado a lado, para revisión manual. |
-| 7 | `07_continuidad.py` | **Continuidad:** compara el comparativo de cada año con el original del año anterior, el arrastre de saldos y las identidades contables dentro del XML. |
+| 7 | `07_continuidad.py` | **Continuidad:** compara el comparativo de cada año con el original del año anterior, el arrastre de saldos y las identidades contables dentro del XML (incluidas las 23 del generador oficial de la CMF). |
 
 Cada regla del pipeline existe por un caso concreto. El registro está en [`docs/decisiones.md`](docs/decisiones.md): qué se decidió, por qué, qué efecto tuvo y qué no resuelve.
 
-## Resultados
+## Resultados por etapa
 
-**Universo:** ~4.500 estados financieros anuales de fondos mutuos vigentes, 2011–2025.
+**Universo:** 4.512 estados financieros anuales de fondos mutuos vigentes, 2011–2025. Las cifras de esta sección son las de cada etapa por sí sola (señales); el conteo único de errores, que junta lo que ven varias etapas, es el de *En cifras*.
 
 ### Estructura de los estados leída desde el PDF (03b)
 
@@ -158,9 +179,20 @@ Para cada par de años consecutivos, el comparativo que presenta el año *t* se 
 Además, 153 fondo-año tienen al menos una identidad contable rota **dentro del mismo XML** (por ejemplo, una suma de líneas que no da el total).
 Además, **3 XML repiten íntegramente las cifras del año anterior**, con el período nuevo declarado: el 100% de sus cuentas es idéntico al XML previo (más 1 caso parcial, con 80%). En el resto del universo, ningún fondo-año supera el 25% de cuentas iguales. El cruce espejo no los detectaba, porque las cifras están en el PDF, pero en la columna del comparativo.
 
-**Alcance de las validaciones de la CMF.** La CMF cuenta con validaciones físicas y lógicas sobre el XML, cuyo alcance está pendiente de confirmación por parte del regulador. Mientras tanto, los datos dan pistas: hay identidades contables que fallan solo en la columna comparativa y nunca en la actual (por ejemplo, las sumas del estado de situación comparativo no muestran fallas en 2011–2016 y sí desde 2017). De las 16 identidades que se verifican en el XML, en la columna actual solo falla una vez una de ellas en todo el universo; las fallas se concentran en el comparativo (sumas del estado de situación, activo − pasivo = activo neto, efectivo del ESF = saldo final del EFE). En el cruce del efectivo, el 03c lo confirma desde el PDF: el documento firmado cuadra y el XML del comparativo no. Eso sugiere qué se valida y en qué columna, pero es una hipótesis hasta tener la respuesta oficial.
+**Alcance de las validaciones de la CMF.** La CMF respondió que no verifica la correspondencia entre el XML y el PDF al recibirlos. El XML se arma con una planilla generadora oficial cuyos totales se calculan por fórmula: de ahí salen 23 identidades, que se evaluaron en los 4.512 XML y no fallan nunca. El XML es coherente por construcción con su planilla; sus errores están donde la planilla no controla: la columna comparativa (las sumas del estado de situación comparativo, activo − pasivo = activo neto, efectivo del ESF = saldo final del EFE) y los cruces con el año anterior. En el cruce del efectivo, el 03c lo confirma desde el PDF: el documento firmado cuadra y el XML del comparativo no. Que el XML cuadre no garantiza que diga lo mismo que el PDF.
 
 ## Validación
+
+**Precisión del conteo final (04c).** Tres muestras aleatorias estratificadas por tipo de error. Un caso cuenta como confirmado si el error está en el documento que dice su tipo.
+
+| tipo | errores | revisados | confirmados | precisión (IC 95%) |
+|---|---|---|---|---|
+| error del PDF | 234 | 68 | 66 | 97% (90–99%) |
+| error del XML | 91 | 41 | 39 | 95% (84–99%) |
+| continuidad | 25 | 13 | 13 | 100% (77–100%) |
+| **total** | **350** | **122** | | **96,8% ± 2,6** |
+
+En las dos primeras muestras se volvieron a mirar casos no confirmados (nunca los confirmados), lo que solo puede subir la cifra: sin esos cambios la precisión es 94,2%. La tercera muestra se revisó en una sola pasada, sin volver sobre ningún veredicto: 25 de 25. Lo no confirmado son diferencias de presentación entre PDF y XML sin un documento demostrablemente malo.
 
 Cada etapa que marca casos se contrastó con revisión manual del PDF original:
 
@@ -216,7 +248,9 @@ Con eso, el ruido de lectura cayó a la mitad y la ubicación de subtotales subi
 
 **7. Cada cambio de lectura se mide contra la lista de errores, no solo contra la cobertura.** Antes y después de cada regla se compara qué líneas se ubican, qué errores aparecen o desaparecen y qué casos cambian. Un ejemplo: en una plantilla, el último dígito de cada monto venía apilado en una sola palabra y la columna del año anterior se leía como actual. La primera reparación sacó seis artefactos de lectura, pero creó dos errores falsos en otra plantilla, donde los glifos duplicados para simular negrita tenían una forma parecida. Se acotó dos veces, hasta que dejó de abrir errores. Con ese control, el resultado del ERI ubicado subió de 4.255 a 4.346 fondo-año y los casos bajaron de 355 a 351 (cuatro eran lectura nuestra), sin errores nuevos.
 
-**8. Materialidad.** Como en una auditoría real, las diferencias iguales o menores a un umbral se registran como observación pero no se revisan: 100 en fondos en pesos (montos en M$) y 1 en fondos en otra moneda. Es una sola definición (`config.py`) que usan el cruce espejo (04), la estructura (03b) y las identidades (03c).
+**8. Saber que no suma no dice qué cifra está mala.** Cuando un subtotal del PDF no es la suma de sus líneas, el 03g sigue la cadena como en una auditoría (suma vertical, el nivel superior, el amarre con el balance): si el aumento neto y el saldo de efectivo cierran con la suma de las líneas, el subtotal impreso es el malo; si cierran con el impreso, es una línea. Antes de llamarlo error se descartan las firmas de lectura (signo, OCR, fila desplazada, una línea con el doble de la diferencia, redondeo por moneda). Dos pruebas resultaron útiles: un solo dígito distinto en una página de texto (la lectura de texto falla por estructura, no cambiando un dígito) y la misma cifra impresa en el informe del año y en el comparativo del siguiente (dos archivos distintos con el mismo número: lo escribió el emisor). Con eso apareció un error que el 03b daba por lectura. El marco general es la localización de errores de Fellegi y Holt (1976): el mínimo de cifras que hay que cambiar para que se cumplan todas las reglas.
+
+**9. Materialidad.** Como en una auditoría real, las diferencias iguales o menores a un umbral se registran como observación pero no se revisan: 100 en fondos en pesos (montos en M$) y 1 en fondos en otra moneda. Es una sola definición (`config.py`) que usan el cruce espejo (04), la estructura (03b) y las identidades (03c).
 
 ## Limitaciones
 
@@ -226,7 +260,9 @@ Con eso, el ruido de lectura cayó a la mitad y la ubicación de subtotales subi
 - **ECP:** se lee el 92,4% de los fondo-año (97,6% de los legibles; 236 son PDF escaneados sin OCR de la página del ECP). Las series no se comparan con el XML una a una (sus nombres no coinciden entre documentos); una serie mal impresa se detecta solo cuando rompe a la vez su columna y la suma de su fila.
 - **2011:** algunas plantillas del primer año NIIF tienen un encabezado que el lector aún no reconoce; esos casos quedan como lectura, no como error.
 - **Solo fondos vigentes** (sesgo de supervivencia) y **solo el último envío** de cada fondo-año (los reenvíos no son observables).
-- **El cruce detecta desacuerdo, no culpa.** Cuál de los dos documentos tiene el error se determina caso a caso, en revisión manual.
+- **El cruce detecta desacuerdo, no culpa.** Cuál de los dos documentos tiene el error se determina con un tercer punto (el otro documento, el comparativo del año siguiente, el amarre entre estados) y, en las muestras, en revisión manual.
+- **El conteo es por celda, no por causa:** un mismo error que se arrastra a varios años o a varias celdas (un balance comparativo completo mal en el XML, un descuadre por serie que viene del año anterior) cuenta más de una vez. La precisión no cambia, pero el número de errores de origen es menor que 350.
+- **La precisión se midió con 122 casos:** el límite inferior del XML es 84%.
 
 ## Uso responsable
 
@@ -253,10 +289,10 @@ Los datos (`data/`) y las planillas de verificación manual (`verificacion/`) no
 run.py                      orquestador del pipeline
 config.py                   rutas y parámetros compartidos (materialidad)
 extraccion/                 01 descarga, 02 parser del XML
-validaciones/fidelidad/     03 cruce espejo, 03a coordenadas, 03a_ocr
-validaciones/estructura/    03b subtotales, 03c identidades entre estados, 03d ECP
-validaciones/continuidad/   07 comparativo vs año anterior
-consolidacion/              04 candidatos, 06 ficha de revisión
+validaciones/fidelidad/     03 cruce espejo, 03a coordenadas, 03a_ocr, 03f documento
+validaciones/estructura/    03b subtotales, 03c identidades entre estados, 03d ECP, 03e comparativos, 03g localización
+validaciones/continuidad/   07 comparativo vs año anterior e identidades del XML
+consolidacion/              04 candidatos, 04b casos, 04c conteo único, 04d escalera, 05 resumen, 06 ficha
 comun/                      lector_espacial y lector_multicolumna (lectura por coordenadas), ocr, secciones
 herramientas/               diag_coords, revisar (revisión manual asistida), muestra_04
 docs/decisiones.md          registro de decisiones y casos
