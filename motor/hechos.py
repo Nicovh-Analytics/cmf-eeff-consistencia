@@ -15,7 +15,7 @@ mas nuevos: las etapas leen el parquet (segundos) en vez de cuentas.csv (140 MB)
 Hechos del PDF (hechos_pdf.parquet), desde los renglones que deja el lector del 03b: cada renglon con
 montos da hasta dos cifras (actual y anterior), con el signo como se imprimio, el codigo que le asigno el
 emparejador (vacio si no tiene), la pagina, el metodo de lectura, como coincidio la glosa y su estructura
-por posicion (orden, rol, bloque). archivo = "rut_anio" (un PDF por fondo-anio).
+por posicion (orden, rol, bloque) y si la pagina es OCR o espaciada. archivo = "rut_anio" (un PDF por fondo-anio).
 
 Uso:
     python motor/hechos.py          reconstruye y resume
@@ -33,7 +33,8 @@ P = CMF_HOME / "procesado"
 RUTA_XML = P / "hechos_xml.parquet"
 RUTA_PDF = P / "hechos_pdf.parquet"
 COLS = ["archivo", "rut", "anio", "contexto", "estado", "codigo", "serie", "valor", "nota"]
-COLS_PDF = COLS[:-1] + ["pagina", "coincide", "metodo", "glosa", "orden", "rol", "bloque", "codigo_repetido"]
+COLS_PDF = COLS[:-1] + ["pagina", "coincide", "metodo", "glosa", "orden", "rol", "bloque", "codigo_repetido",
+                        "ocr", "espaciada"]
 
 
 def ultimo_envio() -> pd.DataFrame:
@@ -65,9 +66,11 @@ def construir_pdf(avisar=True) -> pd.DataFrame:
     se repite en el estado y columna vale la primera: codigo_repetido marca las demas); la suma por
     posicion usa rol = linea y su bloque, las mismas lineas que suma el 03b."""
     r = pd.read_csv(P / "renglones_pdf.csv", dtype={"rut": str, "codigo": str}, low_memory=False,
-                    usecols=["rut", "anio", "estado", "pagina", "glosa", "actual", "anterior", "codigo",
-                             "coincide", "metodo"])
+                    usecols=lambda c: c in {"rut", "anio", "estado", "pagina", "glosa", "actual", "anterior", "codigo",
+                                            "coincide", "metodo", "ocr", "espaciada"})
     r["glosa"] = r["glosa"].fillna("")                  # el lector deja "" y el CSV lo vuelve vacio
+    for c in ("ocr", "espaciada"):                      # pagina OCR / espaciada (03b); antes no se guardaba
+        r[c] = r[c].fillna(False).astype(bool) if c in r else False
     r = r.astype(object).where(r.notna(), None)
     subs, cor = estructura.subtotales(), estructura.cortes()
     filas = []
@@ -82,9 +85,9 @@ def construir_pdf(avisar=True) -> pd.DataFrame:
                 if x[col] is None:
                     continue
                 filas.append((rut, int(anio), ctx, est, x["codigo"] or "", x[col], x["pagina"], x["coincide"],
-                              x["metodo"], x["glosa"], k, *rol.get(k, ("otro", ""))))
+                              x["metodo"], x["glosa"], k, *rol.get(k, ("otro", "")), bool(x["ocr"]), bool(x["espaciada"])))
     h = pd.DataFrame(filas, columns=["rut", "anio", "contexto", "estado", "codigo", "valor", "pagina", "coincide",
-                                     "metodo", "glosa", "orden", "rol", "bloque"])
+                                     "metodo", "glosa", "orden", "rol", "bloque", "ocr", "espaciada"])
     h["archivo"] = h["rut"] + "_" + h["anio"].astype(str)
     h["serie"] = ""
     h["codigo_repetido"] = (h["codigo"] != "") & h.duplicated(["archivo", "contexto", "estado", "codigo"])

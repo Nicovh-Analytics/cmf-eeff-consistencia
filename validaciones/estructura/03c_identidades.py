@@ -12,11 +12,11 @@ Identidades (por columna actual/anterior):
   efectivo_esf_efe       ESF vs EFE: efectivo y efectivo equivalente = saldo final del EFE
 
 Los totales se toman del 03b (estructura_efe.csv: misma ubicacion, mismas
-clases). Las lineas nuevas son los renglones del lector unificado emparejados
-con su codigo (comun.emparejar.leer_y_emparejar, como el 03b y la ficha):
-metodo glosa_y_valor / solo_glosa (el valor impreso difiere del XML) / valor
-(rotulo distinto). Antes cada linea tenia su regex, su lectura por pagina y
-respaldos por posicion y por fila vecina; ahora eso lo resuelve el lector.
+clases). Las lineas nuevas salen de los hechos del PDF (motor/hechos.pdf: los
+renglones que el 03b ya leyo y emparejo, con su codigo, pagina y si es OCR o
+espaciada); el 03c no vuelve a leer los PDF. Su codigo viene del catalogo
+(conceptos.csv, clave). metodo glosa_y_valor / solo_glosa (el valor impreso
+difiere del XML) / valor (rotulo distinto). Las cifras del XML, de motor/hechos.xml.
 
 El XML es el tercer punto, como en el 03b:
   probable_error_pdf    el PDF no cuadra, el XML si, y UN solo termino del PDF difiere del XML
@@ -30,50 +30,29 @@ El XML es el tercer punto, como en el 03b:
 Chequeo de la definicion: si la identidad del XML no cuadra en muchos fondos,
 la identidad esta mal planteada (no hay error en tantos fondos). Se imprime.
 
-Lee:      data/procesado/estructura_efe.csv (03b), cruce_resumen.csv, encabezados.csv, cuentas.csv
+Lee:      data/procesado/estructura_efe.csv (03b), cruce_resumen.csv, encabezados.csv, hechos del PDF y del XML
 Escribe:  data/procesado/identidades.csv            1 fila por fondo-anio-identidad-columna
           data/procesado/lineas_03c.csv            lineas ubicadas (activo neto, resultado del ERI...) para el 03d
           data/procesado/identidades_no_cuadra.csv  las que no cuadran, clasificadas
 """
 import importlib
-import re
 import sys
 
 import pandas as pd
 
 from config import CMF_HOME, casos_conocidos, umbral_materialidad
-from comun.emparejar import leer_y_emparejar
-from comun.lector_espacial import cargar_coords
-from comun.secciones import asignar_secciones
 from comun.autochequeo import exigir
 import catalogo
-from motor import reglas
+from motor import hechos, reglas
 
 m03b = importlib.import_module("validaciones.estructura.03b_estructura")
 norm, TOL, SUB03B = m03b.norm, m03b.TOL, m03b.SUBTOTALES
 DIR_PROC = CMF_HOME / "procesado"
 
-# Lineas que el 03b no ubica: estado y codigo XML. codigos: candidatos en orden de preferencia; si
-# ninguno existe en cuentas.csv se busca por patron_codigo y se avisa cual se uso.
-LINEAS = {
-    "activo_neto": dict(estado="ESF", codigos=["ActivoNetoAtribuibleALosParticipes", "ActivoNetoAtribuibleAParticipes"],
-                        patron_codigo=r"^(Total)?ActivoNetoAtribuible"),
-    "utilidad_operacion": dict(estado="ERI",
-                               codigos=["UtilidadPerdidaDeLaOperacion", "UtilidadPerdidaOperacional", "ResultadoDeLaOperacion"],
-                               patron_codigo=r"^(Utilidad|Resultado).*Operacion"),
-    "efectivo": dict(estado="ESF", codigos=["EfectivoYEfectivoEquivalente"],
-                     patron_codigo=r"^EfectivoYEfectivoEquivalente$"),
-    "saldo_final": dict(estado="EFE",
-                        codigos=["SaldoFinalDeEfectivoYEfectivoEquivalente", "EfectivoYEfectivoEquivalenteAlFinalDelPeriodo"],
-                        patron_codigo=r"SaldoFinal.*Efectivo|Efectivo.*AlFinal"),
-    # Para el 03d (resultado del ERI = resultado del ECP; tramo antes -> distribucion -> despues)
-    "resultado_eri": dict(estado="ERI", codigos=[
-        "AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios"],
-        patron_codigo=r"^AumentoDisminucionDeActivoNeto.*AntesDeDistribucion"),
-    "resultado_eri_despues": dict(estado="ERI", codigos=[
-        "AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios"],
-        patron_codigo=r"^AumentoDisminucionDeActivoNeto.*DespuesDeDistribucion"),
-}
+# Lineas que el 03b no ubica (clave del catalogo): activo neto y utilidad para las identidades, efectivo
+# y saldo final para el cruce ESF-EFE, y el resultado del ERI antes y despues de distribucion para el 03d.
+LINEAS = {k: dict(estado=catalogo.estado(k), codigo=catalogo.codigo(k)) for k in
+          ("activo_neto", "utilidad_operacion", "efectivo", "saldo_final", "resultado_eri", "resultado_eri_despues")}
 METODO = {"ambos": "glosa_y_valor", "glosa": "solo_glosa", "valor": "valor"}
 
 
@@ -111,24 +90,33 @@ _CLAVE = {f"{e}:{c}": k for e, c, k in catalogo.conceptos()[["estado", "codigo",
 TOTAL = {n: _CLAVE[catalogo.regla(_REGLA[n])["total"].split("|")[0]] for n in TERMINOS}
 
 
-def resolver_codigos(todos):
+def lineas_pdf():
+    """{archivo: {clave: renglon}} desde los hechos del PDF: el primer renglon del estado con el codigo de
+    la linea (con algun monto), con sus dos columnas. Es el mismo renglon que tomaba el 03c al releer."""
+    h0 = hechos.pdf()
+    h = h0
+    cl = pd.DataFrame([(k, v["estado"], v["codigo"]) for k, v in LINEAS.items()], columns=["linea", "estado", "codigo"])
+    h = h.merge(cl, on=["estado", "codigo"])
+    h = h[h["metodo"] != "encabezado"]
+    h = h[h["orden"] == h.groupby(["archivo", "linea"])["orden"].transform("min")]
+    col = {"PeriodoActual": "actual", "PeriodoAnterior": "anterior"}
     out = {}
-    for k, cfg in LINEAS.items():
-        cod = next((c for c in cfg["codigos"] if c in todos), None)
-        if cod is None:
-            cands = sorted((c for c in todos if re.search(cfg["patron_codigo"], c)), key=len)
-            cod = cands[0] if cands else None
-            if len(cands) > 1:
-                print(f"AVISO {k}: {len(cands)} codigos posibles, se usa el mas corto '{cod}' "
-                      f"(otros: {', '.join(cands[1:5])}) -> fijalo en LINEAS si no es el correcto")
-        print(f"  {k:<20} codigo XML: {cod or '(ninguno: solo glosa, sin triangular)'}")
-        out[k] = cod
-    return out
+    for (a, k), g in h.groupby(["archivo", "linea"], sort=False):
+        f = g.iloc[0]
+        l = dict(actual=None, anterior=None, pagina=f["pagina"], coincide=f["coincide"], ocr=bool(f["ocr"]),
+                 esp=bool(f["espaciada"]))
+        for c, v in zip(g["contexto"], g["valor"]):
+            l[col[c]] = v
+        out.setdefault(a, {})[k] = l
+    return out, set(zip(h0["archivo"], h0["estado"]))
 
 
-def es_espaciada(coords, p):
-    pal = coords["paginas"].get(str(p), {}).get("palabras", [])
-    return bool(pal) and sum(len(w[0]) == 1 for w in pal) / len(pal) > 0.5
+def xml_lineas():
+    """{(archivo, contexto, codigo): valor} del XML (total, sin serie) para los codigos de LINEAS."""
+    x = hechos.xml()
+    x = x[(x["serie"] == "") & x["codigo"].isin({v["codigo"] for v in LINEAS.values()})]
+    x = x.merge(pd.DataFrame([(v["estado"], v["codigo"]) for v in LINEAS.values()], columns=["estado", "codigo"]))
+    return {(a, c, k): v for a, c, k, v in zip(x["archivo"], x["contexto"], x["codigo"], x["valor"])}
 
 
 def clasificar(r, umbral):
@@ -170,13 +158,11 @@ def main():
     tot = {k: {(f.subtotal, f.columna): f for f in g.itertuples(index=False)}
            for k, g in est.groupby(["rut", "anio"])}
 
-    # Todas las cuentas del archivo: el emparejador necesita el estado completo
-    cta = pd.read_csv(DIR_PROC / "cuentas.csv", usecols=["archivo", "contexto", "codigo", "serie", "valor"],
-                      dtype={"serie": str})
-    cta = cta[cta["archivo"].isin(ok["archivo"]) & cta["codigo"].notna() & cta["valor"].notna()]
-    print("codigos XML de las lineas nuevas:")
-    codigos = resolver_codigos(set(cta.loc[cta["serie"].isna(), "codigo"].unique()))
-    cta_de = dict(tuple(cta.groupby("archivo", sort=False)))
+    print("codigos XML de las lineas nuevas (catalogo):")
+    for k, v in LINEAS.items():
+        print(f"  {k:<22} {v['estado']} {v['codigo']}")
+    lin, estados_pdf = lineas_pdf()
+    x = xml_lineas()
 
     filas, ubic, lineas_out = [], {k: [0, 0] for k in LINEAS}, []
     dudosas = {k: 0 for k in LINEAS}
@@ -184,26 +170,19 @@ def main():
         t = tot.get((r.rut, r.anio))
         if not t:
             continue
-        coords = cargar_coords(r.rut, r.anio, r.pdf)
-        c = cta_de.get(r.archivo)
-        if coords is None or c is None:
-            continue
-        c = c.copy()
-        c["estado_fin"] = asignar_secciones(c["codigo"].tolist())
-        renglones, _ = leer_y_emparejar(coords, r.paginas_estados, c)
-        sx = c[c["serie"].isna()]
-        x = {(ctx, k): v for ctx, k, v in zip(sx["contexto"], sx["codigo"], sx["valor"])}
+        a = r.rut + "_" + str(r.anio)
+        if not any((a, e) in estados_pdf for e in ("ESF", "ERI", "EFE")):
+            continue                            # PDF sin renglones leidos (sin coordenadas del 03a)
         nuevas = {}
         for k, cfg in LINEAS.items():
-            cod, rs = codigos[k], renglones.get(cfg["estado"], [])
-            if not cod or not rs:
+            cod = cfg["codigo"]
+            if (a, cfg["estado"]) not in estados_pdf:
                 continue
             ubic[k][1] += 1
-            l = next((q for q in rs if q["codigo"] == cod and q["metodo"] != "encabezado"
-                      and (q["actual"] is not None or q["anterior"] is not None)), None)
+            l = lin.get(a, {}).get(k)
             if l is None:
                 continue
-            xa, xb, q = x.get(("PeriodoActual", cod)), x.get(("PeriodoAnterior", cod)), l["pagina"]
+            xa, xb, q = x.get((r.archivo, "PeriodoActual", cod)), x.get((r.archivo, "PeriodoAnterior", cod)), l["pagina"]
             if dudosa(l, xa, xb):
                 dudosas[k] += 1
                 continue
@@ -211,8 +190,7 @@ def main():
             nuevas[k] = dict(actual=l["actual"] if l["actual"] is not None else 0,
                              anterior=l["anterior"] if l["anterior"] is not None else (0 if xb is not None else None),
                              xml_actual=xa, xml_anterior=xb, pagina=q, metodo=METODO[l["coincide"]],
-                             ocr=coords["paginas"].get(str(q), {}).get("origen") == "ocr",
-                             esp=es_espaciada(coords, q))
+                             ocr=l["ocr"], esp=l["esp"])
 
         # Lineas ubicadas (las usa el 03d: activo neto del ESF, resultado del ERI)
         for k, n in nuevas.items():

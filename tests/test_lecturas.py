@@ -8,7 +8,7 @@ OP = "FlujoNetoOriginadoPorActividadesDeLaOperacion"
 
 def hechos(filas):
     h = pd.DataFrame(filas, columns=["codigo", "valor", "rol", "bloque"])
-    return h.assign(archivo="8000_2020", contexto="PeriodoActual", estado="EFE", serie="")
+    return h.assign(archivo="X_2020", contexto="PeriodoActual", estado="EFE", serie="")
 
 
 def test_corte_con_renglon_de_mas():
@@ -19,7 +19,7 @@ def test_corte_con_renglon_de_mas():
         (OP, 60.0, "subtotal", "operacion"),
     ])
     r = lecturas.dos_lecturas(h).set_index("subtotal").loc["operacion"]
-    assert (r["rut"], r["anio"], r["columna"]) == ("8000", 2020, "actual")
+    assert (r["rut"], r["anio"], r["columna"]) == ("X", 2020, "actual")
     assert (r["total_pos"], r["suma_pos"], bool(r["cuadra_pos"])) == (60.0, 67.0, False)
     assert (r["total_cod"], r["suma_cod"], bool(r["cuadra_cod"])) == (60.0, 60.0, True)
 

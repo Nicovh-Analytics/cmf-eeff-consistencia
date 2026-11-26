@@ -416,11 +416,6 @@ def main():
         c = c.copy()
         c["estado_fin"] = asignar_secciones(c["codigo"].tolist())     # orden del XML
         renglones, paginas = leer_y_emparejar(coords, r.paginas_estados, c)
-        for est, rs in renglones.items():
-            renglones_out += [dict(rut=r.rut, anio=r.anio, estado=est, pagina=q["pagina"], glosa=q["glosa"],
-                                   actual=q["actual"], anterior=q["anterior"], codigo=q.get("codigo"),
-                                   coincide=q.get("coincide"), metodo=q["metodo"], rotulo=q.get("rotulo"),
-                                   glosa_de=q.get("glosa_de")) for q in rs]
         sx = c[c["serie"].isna()]
         xml = {(ctx, k): v for ctx, k, v in zip(sx["contexto"], sx["codigo"], sx["valor"])}
         # Pagina "espaciada": mas de la mitad de las palabras son de 1 caracter (letras y digitos
@@ -433,6 +428,13 @@ def main():
                 espaciadas.add(p)
             if pg.get("origen") == "ocr":
                 ocr.add(p)
+        # renglones con la pagina OCR / espaciada: el 03c y los hechos del PDF no vuelven a leer el PDF
+        for est, rs in renglones.items():
+            renglones_out += [dict(rut=r.rut, anio=r.anio, estado=est, pagina=q["pagina"], glosa=q["glosa"],
+                                   actual=q["actual"], anterior=q["anterior"], codigo=q.get("codigo"),
+                                   coincide=q.get("coincide"), metodo=q["metodo"], rotulo=q.get("rotulo"),
+                                   glosa_de=q.get("glosa_de"), ocr=q["pagina"] in ocr,
+                                   espaciada=q["pagina"] in espaciadas) for q in rs]
         for f in analizar_fondo(renglones, xml, espaciadas, ocr, int(r.anio)):
             filas.append({"rut": r.rut, "anio": r.anio, "nombre_agf": r.nombre_agf, "moneda": r.moneda, **f})
 
