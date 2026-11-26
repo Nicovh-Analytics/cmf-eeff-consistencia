@@ -28,8 +28,7 @@ hay, quedan como caso "revisar" fuera del conteo de errores.
 Contexto (no forma casos; se reporta): candidatos del 04 (fondo-anio) y comparativos del XML
 modificados del 07 sin pareja en el 04b.
 
-Lee:      las salidas de 03b (y sus renglones), 03c, 03d, 03f, 03g, 04, 04b y 07 en data/procesado, y los
-          hechos del PDF (motor/hechos.py) para la suma por codigo de los subtotales del 03b
+Lee:      las salidas de 03b (y sus renglones), 03c, 03d, 03f, 03g, 04, 04b y 07 en data/procesado
 Escribe:  data/procesado/casos_unicos.csv, casos_unicos_senales.csv
 """
 import sys
@@ -358,20 +357,6 @@ def senales_rotulos():
     return pd.concat(out, ignore_index=True)
 
 
-def suma_por_codigo() -> dict:
-    """(rut, anio, columna, subtotal) -> (total, suma de partes) de las reglas de suma del 03b evaluadas
-    por el motor sobre los hechos del PDF, con el signo impreso."""
-    import catalogo
-    from motor import hechos, reglas
-    r = catalogo.reglas()
-    r = r[(r["clave_03b"] != "") & (r["activa"] == "si")]
-    ident = {c: (t, catalogo.terminos(p)) for c, t, p in zip(r["clave_03b"], r["total"], r["partes"])}
-    m = reglas.por_columna(hechos.pdf(), identidades=ident).reset_index()
-    col = {"PeriodoActual": "actual", "PeriodoAnterior": "anterior"}
-    return {(a.split("_")[0], int(a.split("_")[1]), col[c], i): (t, sp)
-            for a, c, i, t, sp in zip(m["archivo"], m["contexto"], m["identidad"], m["total"], m["suma_partes"])}
-
-
 def senales():
     s = []
     # 03b: subtotal que no suma (PDF)
@@ -395,23 +380,11 @@ def senales():
         k_lz = set(zip(lz["rut"], lz["anio"], lz["subtotal"], lz["columna"]))
         emisor = pd.Series([(r, a, su, c) in k_lz for r, a, su, c
                             in zip(b["rut"], b["anio"], b["subtotal"], b["columna"])], index=b.index)
-        sube = emisor & (clase_03b == "lectura") & (b["clase"] != "probable_lectura_ocr")
+        # no sube la lectura que el 03b dejo por la segunda lectura (D-CU19): la suma por codigo cuadra
+        sube = emisor & (clase_03b == "lectura") & ~b["clase"].isin(["probable_lectura_ocr", "probable_lectura_codigo"])
         clase_03b = clase_03b.where(~sube, "error")
         print(f"03g: {int(sube.sum())} subtotales del 03b de lectura a error (un digito o repetido en t+1, "
               f"la cadena cierra con la suma interna)")
-    # Motor (D-CU19): la suma por CODIGO (renglones con el codigo que les asigno el emparejador) con el
-    # signo impreso cuadra con el mismo subtotal impreso: el 03b, que suma por POSICION, tomo un renglon
-    # de mas o de menos (un numero de nota, el titulo del bloque, el bloque vecino). La senal del 03b baja
-    # a lectura; si el error es real lo ven otras etapas y el caso se mantiene. Solo el signo impreso: con
-    # el signo oficial un saldo negativo mal impreso tambien "cuadraria" (revision: 12 de 12 en la
-    # muestra eran lectura del 03b o signo; ninguna linea real quedo fuera de la suma por codigo).
-    cod = suma_por_codigo()
-    por_cod = pd.Series([(lambda v: v is not None and abs(abs(v[0]) - abs(sp)) <= TOL and abs(abs(v[0]) - abs(v[1])) <= TOL)
-                         (cod.get((r, a, c, su))) for r, a, c, su, sp
-                         in zip(b["rut"], b["anio"], b["columna"], b["subtotal"], b["subtotal_pdf"])], index=b.index)
-    baja = por_cod & (clase_03b == "error")
-    clase_03b = clase_03b.where(~baja, "lectura")
-    print(f"motor: {int(baja.sum())} subtotales del 03b de error a lectura (la suma por codigo cuadra con el impreso)")
     s.append(pd.DataFrame({"fuente": "03b", "rut": b["rut"], "anio_doc": b["anio"], "documento": "PDF",
                            "columna": b["columna"], "estado": b["subtotal"].map(ESTADO), "linea": b["subtotal"],
                            "nivel": "subtotal", "dif": b["dif"], "clase": clase_03b,

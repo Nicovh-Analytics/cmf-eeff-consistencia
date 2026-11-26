@@ -367,6 +367,29 @@ def clasificar(df):
 
 
 
+def segunda_lectura(c):
+    """Lectura por codigo (motor, D-CU19): si la suma por codigo con el signo impreso cuadra con el mismo
+    subtotal impreso, el no-suma por posicion es lectura nuestra (el corte tomo un renglon de mas o de
+    menos). Solo baja lo que el 04c contaria como error: probable_error* salvo el total igual al XML sin
+    una linea distinta (eso ya queda en revisar). Revision: 12 de 12 en la muestra eran lectura del 03b o
+    signo; ninguna linea real quedo fuera de la suma por codigo."""
+    from motor import hechos, lecturas
+    if c.empty:
+        return c
+    lec = lecturas.dos_lecturas(hechos.pdf(reconstruir=True))
+    c = c.merge(lec[["rut", "anio", "columna", "subtotal", "total_cod", "suma_cod", "cuadra_cod"]],
+                on=["rut", "anio", "columna", "subtotal"], how="left")
+    mismo_total = (c["total_cod"].abs() - c["subtotal_pdf"].abs()).abs() <= TOL
+    linea = c["clase"].astype(str).str.contains("linea_distinta|linea_no_sumada|tipeo")
+    error = (c["clase"].astype(str).str.startswith("probable_error") & ~c["clase"].astype(str).str.startswith("probable_error_rotulo")
+             & (~c["igual_xml"].fillna(False).astype(bool) | linea))
+    baja = error & c["cuadra_cod"].fillna(False).astype(bool) & mismo_total
+    c.loc[baja, "clase_detalle"] = c.loc[baja, "clase"]
+    c.loc[baja, "clase"] = "probable_lectura_codigo"
+    print(f"segunda lectura (por codigo): {int(baja.sum())} no-suma de error a lectura")
+    return c.drop(columns=["total_cod", "cuadra_cod"])
+
+
 def main():
     res = pd.read_csv(DIR_PROC / "cruce_resumen.csv", dtype={"rut": str})
     enc = pd.read_csv(DIR_PROC / "encabezados.csv", dtype={"rut": str})
@@ -418,7 +441,7 @@ def main():
            len(ok), "fondo-anio con algun subtotal ubicado")
     df.to_csv(DIR_PROC / "estructura_efe.csv", index=False, encoding="utf-8-sig")
     pd.DataFrame(renglones_out).to_csv(DIR_PROC / "renglones_pdf.csv", index=False, encoding="utf-8-sig")
-    cand = clasificar(df)
+    cand = segunda_lectura(clasificar(df))
     cand.to_csv(DIR_PROC / "estructura_efe_no_suma.csv", index=False, encoding="utf-8-sig")
 
     # --- Consola ---
