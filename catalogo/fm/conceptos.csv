@@ -82,7 +82,7 @@ EFE,AumentoDisminucionNetaDeCuentasPorPagarCobrarAIntermediarios,26,si,,,indirec
 EFE,AumentoDisminucionNetaDeCuentasPorPagarCobrarALaSociedadAdministradora,27,si,,,indirecto,,+-,
 EFE,SubtotalEfectivoUtilizadoEnOperaciones,28,si,,,indirecto,,+-,
 EFE,FlujoNetoUtilizadoEnActividadesDeLaOperacion,29,si,,FlujoNetoOriginadoPorActividadesDeLaOperacion,indirecto,,+-,
-EFE,RescateDeCuotasEnCirculacion,30,si,,,indirecto,,-,
+EFE,RescateDeCuotasEnCirculacion,30,si,,RescatesDeCuotasEnCirculacion,indirecto,,-,
 EFE,DistribucionesPagadasAParticipes,31,si,,,indirecto,,-,
 EFE,FlujoNetoUtilizadoPorActividadesDeFinanciamiento,32,si,,FlujoNetoOriginadoPorActividadesDeFinanciamiento,indirecto,,+-,
 EFE,AumentoDisminucionNetoDeEfectivoYEfectivoEquivalente,33,si,,AumentoNetoDeEfectivoYEfectivoEquivalente,indirecto,,+,

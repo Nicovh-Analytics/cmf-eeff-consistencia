@@ -373,7 +373,7 @@ def xml_estado(cta_estado):
     return xml
 
 
-COINCIDE = {"ambos": "glosa y valor", "glosa": "glosa", "valor": "valor"}
+COINCIDE = {"ambos": "glosa y valor", "glosa": "glosa", "valor": "valor", "posicion": "posicion"}
 NOTA_METODO = {"corrido": " (montos corridos una linea)", "monto_sin_glosa": " (monto en linea sin texto)"}
 
 

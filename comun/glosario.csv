@@ -1,6 +1,8 @@
-codigo,estado,patron,excluir,nota
-TotalActivo,ESF,totalactivos?,,
-TotalPasivo,ESF,totalpasivos?,,"Total pasivo (excluido el activo neto atribuible a participes)"
+codigo,estado,patron,excluir,nota,puntaje
+TotalActivo,ESF,totalactivos?(?!s?corrientes?$),activos?netos?atribuible,"Total activos; no el total del activo neto atribuible a los participes (totalactivo... tambien calzaba)"
+TotalActivo,ESF,totalactivos?corrientes?$,,"el subtotal de activos corrientes: total solo si no hay otro (puntaje menor)",0.95
+TotalPasivo,ESF,totalpasivos?(?!s?corrientes?$),,"Total pasivo (excluido el activo neto atribuible a participes)"
+TotalPasivo,ESF,totalpasivos?corrientes?$,,"el subtotal de pasivos corrientes: total solo si no hay otro (puntaje menor)",0.95
 ActivoNetoAtribuibleALosParticipes,ESF,activos?netos?atribuibles?,excluido|totalpasivo,"no el 'Total pasivo (excluido el activo neto atribuible...)'"
 TotalIngresosPerdidasNetosDeLaOperacion,ERI,total(de)?ingresos,,
 TotalGastosDeOperacion,ERI,totalgastos,,
@@ -20,3 +22,4 @@ AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaO
 AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios,ERI,despuesde(la)?distribuci,,
 CambiosNetosEnValorRazonableDeActivosYPasivosFinancierosAValorRazonableConEfectoEnResultados,ERI,cambiosnetosenvalorrazonable,,
 InteresesDiferenciasDeCambioYReajustesRecibidos,EFE,^(intereses|cupones).*reajustes?recibidos,,"tambien 'Cupones y reajustes recibidos'"
+DistribucionDeBeneficios,ERI,^(total)?distribuci,activos?netos?|aumento,"el resultado despues de distribucion trae las mismas palabras: sin esto la similitud lo da por la distribucion"

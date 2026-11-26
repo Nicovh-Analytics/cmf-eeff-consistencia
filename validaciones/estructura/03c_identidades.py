@@ -53,7 +53,7 @@ DIR_PROC = CMF_HOME / "procesado"
 # y saldo final para el cruce ESF-EFE, y el resultado del ERI antes y despues de distribucion para el 03d.
 LINEAS = {k: dict(estado=catalogo.estado(k), codigo=catalogo.codigo(k)) for k in
           ("activo_neto", "utilidad_operacion", "efectivo", "saldo_final", "resultado_eri", "resultado_eri_despues")}
-METODO = {"ambos": "glosa_y_valor", "glosa": "solo_glosa", "valor": "valor"}
+METODO = {"ambos": "glosa_y_valor", "glosa": "solo_glosa", "valor": "valor", "posicion": "posicion"}
 
 
 def dudosa(l, xa, xb):
