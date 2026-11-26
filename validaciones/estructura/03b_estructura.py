@@ -42,6 +42,7 @@ from comun.emparejar import leer_y_emparejar
 from comun.lector_espacial import cargar_coords
 from comun.secciones import asignar_secciones
 from comun.autochequeo import exigir
+from comun import estructura
 import catalogo
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -59,16 +60,9 @@ SUBTOTALES = {k: dict(**catalogo.subtotal_03b(k), glosa=re.compile(catalogo.glos
               for k in ("operacion", "financiamiento", "total_activo", "total_pasivo",
                         "total_ingresos", "total_gastos")}
 
-# Las regex se aplican sobre el texto SIN espacios (norm): hay PDFs que se
-# extraen pegados ("Flujonetoutilizadoenactividades...") y con \s+ no calzaban.
-def norm(s):
-    return re.sub(r"\s+", "", s).lower()
-
-# Glosa de un subtotal o total sin cuenta propia ("Subtotal ajustes", "Subtotal efectivo utilizado
-# en operaciones", "Aumento (disminucion) de activo neto..." en un EFE indirecto): corta los componentes.
-RE_SUBTOTAL = re.compile(r"flujos?netos?|aumento|disminuci|saldo(inicial|final)|total")
+# norm, RE_SUBTOTAL y RE_AJENA (corte de los componentes por posicion) viven en comun/estructura.
+norm = estructura.norm
 METODO = {"ambos": "glosa_y_valor", "valor": "valor", "glosa": "solo_glosa"}
-RE_AJENA = re.compile(r"activos?netos?atribuible")
 
 
 def corrido_vecino(L, i, idx, x_tot):
@@ -81,46 +75,13 @@ def corrido_vecino(L, i, idx, x_tot):
 
 
 def lineas_estado(rs):
-    """Renglones con montos de un estado (sin encabezados), en orden:
-    (glosa, actual, anterior, glosa_ext, pagina, codigo, coincide, metodo)."""
-    out = []
-    for r in rs:
-        if r["metodo"] == "encabezado" or (r["actual"] is None and r["anterior"] is None):
-            continue
-        out.append((r["glosa"], r["actual"] if r["actual"] is not None else 0, r["anterior"],
-                    (r["previa"] + " " + r["glosa"]).strip(), r["pagina"], r["codigo"], r["coincide"],
-                    r["metodo"]))
-    return out
+    """Renglones con montos de un estado (comun/estructura.lineas)."""
+    return estructura.lineas(rs)
 
 
 def componentes(lin, i_sub, cortes, fechas=frozenset(), partes=frozenset()):
-    """Lineas con montos sobre el subtotal, dentro del estado, hasta el renglon de otro
-    subtotal o identidad (cortes: sus codigos) o una linea "subtotal/total" sin cuenta propia.
-    Esa linea se salta si esta justo encima y repite los montos del subtotal (o va en 0).
-    fechas: anios del documento y dias de cierre; una linea sin cuenta cuyos montos son solo eso es
-    un encabezado de fecha que el lector no marco ("31 | 2015", "2012") y no se suma."""
-    propios = {abs(v) for v in lin[i_sub][1:3] if v}
-    comp = []
-    for j in range(i_sub - 1, -1, -1):
-        glosa, a, b, _, _, cod, _, _ = lin[j]
-        if cod in cortes:
-            break
-        # el activo neto atribuible no es parte de ningun subtotal del ESF/ERI/EFE: es una linea del
-        # ECP (o del ESF) que quedo dentro del estado (pagina compartida sin titulo)
-        if RE_AJENA.search(norm(glosa)):
-            break
-        # una linea "total/subtotal/flujo neto" que no es parte de este subtotal corta, aunque el
-        # emparejador le haya dado otra cuenta ("Total activos" sobre el bloque del pasivo)
-        if cod not in partes and RE_SUBTOTAL.search(norm(glosa)):
-            nums = {abs(v) for v in (a, b) if v}
-            if not comp and nums <= propios:
-                continue
-            break
-        vals = {abs(v) for v in (a, b) if v}
-        if not cod and vals and vals <= fechas:
-            continue
-        comp.append((glosa, a, b, lin[j][7]))
-    return list(reversed(comp))
+    """Lineas que forman el subtotal por posicion (comun/estructura.miembros): (glosa, actual, anterior, metodo)."""
+    return [(lin[j][0], lin[j][1], lin[j][2], lin[j][7]) for j in estructura.miembros(lin, i_sub, cortes, fechas, partes)]
 
 
 def buscar_agregacion(faltan_xml, sobran_pdf):
@@ -159,8 +120,7 @@ LINEAS_EFE = {
 # Codigos que cortan los componentes, por estado: los subtotales del estado y, en el EFE, las
 # lineas de las identidades. La diferencia de cambio sobre efectivo es parte del ERI (ingresos)
 # y linea de identidad del EFE: con un solo conjunto cortaba los ingresos de la ERI.
-CORTES = {est: {cfg["codigo"] for cfg in SUBTOTALES.values() if cfg["estado"] == est} for est in ("ESF", "ERI", "EFE")}
-CORTES["EFE"] |= {cfg["codigo"] for cfg in IDENTIDADES_EFE.values()} | {v[0] for v in LINEAS_EFE.values()}
+CORTES = estructura.cortes()
 
 
 def analizar_fondo(renglones, xml, espaciadas, ocr, anio=None):

@@ -13,8 +13,9 @@ Se guarda en procesado/hechos_xml.parquet y se reconstruye solo si cuentas.csv o
 mas nuevos: las etapas leen el parquet (segundos) en vez de cuentas.csv (140 MB) cada una.
 
 Hechos del PDF (hechos_pdf.parquet), desde los renglones que deja el lector del 03b: cada renglon con
-codigo asignado por el emparejador da hasta dos cifras (actual y anterior), con el signo como se imprimio,
-la pagina, el metodo de lectura y como coincidio la glosa. archivo = "rut_anio" (un PDF por fondo-anio).
+montos da hasta dos cifras (actual y anterior), con el signo como se imprimio, el codigo que le asigno el
+emparejador (vacio si no tiene), la pagina, el metodo de lectura, como coincidio la glosa y su estructura
+por posicion (orden, rol, bloque). archivo = "rut_anio" (un PDF por fondo-anio).
 
 Uso:
     python motor/hechos.py          reconstruye y resume
@@ -24,6 +25,7 @@ import sys
 
 import pandas as pd
 
+from comun import estructura
 from comun.secciones import asignar_secciones
 from config import CMF_HOME
 
@@ -31,7 +33,7 @@ P = CMF_HOME / "procesado"
 RUTA_XML = P / "hechos_xml.parquet"
 RUTA_PDF = P / "hechos_pdf.parquet"
 COLS = ["archivo", "rut", "anio", "contexto", "estado", "codigo", "serie", "valor", "nota"]
-COLS_PDF = COLS[:-1] + ["pagina", "coincide", "metodo", "glosa"]
+COLS_PDF = COLS[:-1] + ["pagina", "coincide", "metodo", "glosa", "orden", "rol", "bloque", "codigo_repetido"]
 
 
 def ultimo_envio() -> pd.DataFrame:
@@ -57,20 +59,38 @@ def construir_xml(enc: pd.DataFrame | None = None, avisar=True) -> pd.DataFrame:
 
 
 def construir_pdf(avisar=True) -> pd.DataFrame:
+    """Una fila por cifra de los renglones con montos (no encabezados) del lector, con o sin codigo,
+    y su estructura por posicion (comun/estructura): orden dentro del estado, rol (subtotal | linea |
+    otro) y bloque (el subtotal al que suma). La suma por codigo usa las filas con codigo (si un codigo
+    se repite en el estado y columna vale la primera: codigo_repetido marca las demas); la suma por
+    posicion usa rol = linea y su bloque, las mismas lineas que suma el 03b."""
     r = pd.read_csv(P / "renglones_pdf.csv", dtype={"rut": str, "codigo": str}, low_memory=False,
                     usecols=["rut", "anio", "estado", "pagina", "glosa", "actual", "anterior", "codigo",
                              "coincide", "metodo"])
-    r = r[r["codigo"].notna() & (r["metodo"] != "encabezado")]
-    h = r.melt(id_vars=["rut", "anio", "estado", "pagina", "glosa", "codigo", "coincide", "metodo"],
-               value_vars=["actual", "anterior"], var_name="columna", value_name="valor")
-    h = h[h["valor"].notna()]
-    h["contexto"] = h["columna"].map({"actual": "PeriodoActual", "anterior": "PeriodoAnterior"})
+    r["glosa"] = r["glosa"].fillna("")                  # el lector deja "" y el CSV lo vuelve vacio
+    r = r.astype(object).where(r.notna(), None)
+    subs, cor = estructura.subtotales(), estructura.cortes()
+    filas = []
+    for (rut, anio, est), g in r.groupby(["rut", "anio", "estado"], sort=False):
+        recs = [x for x in g.to_dict("records")
+                if x["metodo"] != "encabezado" and not (x["actual"] is None and x["anterior"] is None)]
+        L = estructura.lineas(recs)                     # mismo filtro: recs[k] <-> L[k]
+        s_est = {k: v for k, v in subs.items() if v["estado"] == est}
+        rol = {b["i"]: (b["rol"], b["bloque"]) for b in estructura.bloques(L, s_est, cor.get(est, set()), int(anio))}
+        for k, x in enumerate(recs):
+            for col, ctx in (("actual", "PeriodoActual"), ("anterior", "PeriodoAnterior")):
+                if x[col] is None:
+                    continue
+                filas.append((rut, int(anio), ctx, est, x["codigo"] or "", x[col], x["pagina"], x["coincide"],
+                              x["metodo"], x["glosa"], k, *rol.get(k, ("otro", ""))))
+    h = pd.DataFrame(filas, columns=["rut", "anio", "contexto", "estado", "codigo", "valor", "pagina", "coincide",
+                                     "metodo", "glosa", "orden", "rol", "bloque"])
     h["archivo"] = h["rut"] + "_" + h["anio"].astype(str)
     h["serie"] = ""
-    n0 = len(h)
-    h = h.drop_duplicates(["archivo", "contexto", "estado", "codigo"])     # el primer renglon con ese codigo
-    if avisar and n0 - len(h):
-        print(f"aviso PDF: {n0 - len(h)} cifras con el codigo repetido en el mismo estado y columna descartadas")
+    h["codigo_repetido"] = (h["codigo"] != "") & h.duplicated(["archivo", "contexto", "estado", "codigo"])
+    if avisar and h["codigo_repetido"].any():
+        print(f"aviso PDF: {int(h['codigo_repetido'].sum())} cifras con el codigo repetido en el mismo estado y "
+              f"columna (la suma por codigo usa la primera)")
     return h[COLS_PDF].reset_index(drop=True)
 
 
@@ -109,6 +129,7 @@ def main():
         print(f"\nhechos PDF: {len(p):,} cifras en {p['archivo'].nunique():,} PDF -> {RUTA_PDF}")
         print(p.groupby(["estado", "contexto"]).size().unstack().to_string())
         print("coincidencia de la glosa:", p["coincide"].value_counts(dropna=False).to_dict())
+        print("rol:", p["rol"].value_counts().to_dict(), "| sin codigo:", int((p["codigo"] == "").sum()))
     return 0
 
 
