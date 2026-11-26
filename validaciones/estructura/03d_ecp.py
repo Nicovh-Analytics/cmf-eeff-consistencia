@@ -42,6 +42,8 @@ from collections import Counter
 
 import pandas as pd
 
+from comun.autochequeo import exigir
+
 from comun.lector import leer_estados, paginas_de
 from comun.lector_espacial import cargar_coords
 from comun.lector_multicolumna import columna_total, filas_multicolumna
@@ -785,6 +787,7 @@ def main():
                 filas_c.append(fila)
 
     bl, ch = pd.DataFrame(filas_b), pd.DataFrame(filas_c)
+    exigir("03d", int((bl["columna"] == "actual").sum()) if len(bl) else 0, len(ok), "fondo-anio con bloque actual del ECP")
     bl.to_csv(DIR_PROC / "ecp_bloques.csv", index=False, encoding="utf-8-sig")
     ch.to_csv(DIR_PROC / "ecp_chequeos.csv", index=False, encoding="utf-8-sig")
     nc = ch[ch["clase"] != "cuadra"]

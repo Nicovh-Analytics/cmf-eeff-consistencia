@@ -41,6 +41,7 @@ from config import casos_conocidos, umbral_materialidad, CMF_HOME
 from comun.emparejar import leer_y_emparejar
 from comun.lector_espacial import cargar_coords
 from comun.secciones import asignar_secciones
+from comun.autochequeo import exigir
 import catalogo
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -453,6 +454,8 @@ def main():
             filas.append({"rut": r.rut, "anio": r.anio, "nombre_agf": r.nombre_agf, "moneda": r.moneda, **f})
 
     df = pd.DataFrame(filas)
+    exigir("03b", df.loc[df["ubicado"] == True, ["rut", "anio"]].drop_duplicates().shape[0] if len(df) else 0,
+           len(ok), "fondo-anio con algun subtotal ubicado")
     df.to_csv(DIR_PROC / "estructura_efe.csv", index=False, encoding="utf-8-sig")
     pd.DataFrame(renglones_out).to_csv(DIR_PROC / "renglones_pdf.csv", index=False, encoding="utf-8-sig")
     cand = clasificar(df)

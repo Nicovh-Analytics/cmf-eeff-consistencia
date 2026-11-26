@@ -45,6 +45,7 @@ from config import CMF_HOME, casos_conocidos, umbral_materialidad
 from comun.emparejar import leer_y_emparejar
 from comun.lector_espacial import cargar_coords
 from comun.secciones import asignar_secciones
+from comun.autochequeo import exigir
 import catalogo
 from motor import reglas
 
@@ -271,6 +272,9 @@ def main():
                 filas.append(fila)
 
     df = pd.DataFrame(filas)
+    con_03b = len(set(tot) & set(zip(ok["rut"], ok["anio"])))      # fondo-anio con subtotales del 03b
+    exigir("03c", df[["rut", "anio"]].drop_duplicates().shape[0] if len(df) else 0, con_03b,
+           "fondo-anio con identidades evaluadas")
     if df.empty:
         print("sin identidades evaluables")
         return 0

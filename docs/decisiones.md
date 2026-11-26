@@ -974,3 +974,55 @@ El marco general es la localizacion de errores de Fellegi-Holt (1976): el minimo
 **Documento.** En las carpetas con varios PDF (estados financieros, dictamen y declaracion) el pipeline toma siempre los estados financieros con notas. Los PDF con solo la opinion del auditor son lo que subio la AGF, no un error de seleccion.
 
 **Pendiente.** Paso 4 del protocolo (linea por linea contra el XML y el comparativo t+1, para separar linea mal impresa de linea mal leida); ECP en el arbol (via 03d); Fellegi-Holt si `revisar` crece; tipo de opinion del dictamen como variable.
+
+### D-CU18. Precision final de los errores del 04c (2026-11-24)
+
+**Diseno.** Tres muestras aleatorias, estratificadas por tipo, sobre el conteo de su momento. La precision se mide como "el error esta en el documento que dice el tipo" (error_PDF confirmado en el PDF, error_XML en el XML; continuidad acepta cualquiera de los dos). Un caso revisado que sigue existiendo hoy con el mismo tipo conserva su veredicto; los que se fueron (corregidos o reclasificados) no cuentan. Estimador estratificado con los tamanos de hoy.
+
+**Tercera muestra (semilla 20261124): la cifra sin sesgo.** 25 casos nuevos (10 error_PDF, 15 error_XML, cargada al XML que era el estrato mas incierto), revisados en una sola pasada con la localizacion del 03g a la vista y sin volver sobre ningun veredicto.
+
+| tipo | revisados | confirmados | IC 95% (Wilson) |
+|---|---|---|---|
+| error_PDF | 10 | 10 | 72-100% |
+| error_XML | 15 | 15 | 80-100% |
+| total | 25 | 25 | 87-100% |
+
+**Las tres muestras juntas** (122 casos que siguen siendo errores hoy, de 139 revisados):
+
+| tipo | errores | revisados | confirmados | precision | IC 95% |
+|---|---|---|---|---|---|
+| error_PDF | 234 | 68 | 66 | 97% | 90-99% |
+| error_XML | 91 | 41 | 39 | 95% | 84-99% |
+| error_continuidad | 25 | 13 | 13 | 100% | 77-100% |
+| **total** | **350** | **122** | | **96,8% (+-2,6)** | ~339 confirmados |
+
+Error real en algun documento (sea o no el que dice el tipo): 97,4%.
+
+**Lo que se declara junto con la cifra.**
+- En las muestras 1 y 2 se volvieron a mirar casos no confirmados (nunca los confirmados), lo que solo puede subir la cifra. Los veredictos que cambiaron se cambiaron por una suma verificada en el PDF (tres casos), con el protocolo de D-CU17. Sin esos cambios la combinada es 94,2% (PDF 94%, XML 93%). La tercera muestra, sin repaso, da 25 de 25.
+- El limite inferior del XML (84%) es ancho: 41 casos revisados.
+- No confirmados: 2 del PDF y 2 del XML son diferencias de presentacion entre PDF y XML sin un documento demostrablemente malo (una linea en uno y no en el otro, montos chicos) o criterio de distribucion; 1 error_XML esta en el PDF (un caso).
+
+**Conteo (no precision).** La revision muestra errores de origen contados mas de una vez: el mismo problema en dos celdas del mismo documento (un ESF comparativo completo mal), un descuadre arrastrado por varios anios (un ECP por serie), o un error del PDF heredado por el XML. Son errores reales (la precision no cambia), pero el conteo por celda sobrestima los errores de origen. Pendiente: agrupar por causa (con la fila desplazada recurrente de D-CU16).
+
+### D-CU19. Motor de reglas (v2): catalogo, hechos y dos lecturas independientes del PDF (2026-11-25)
+
+**Arquitectura.** Las reglas contables pasan a ser datos y no codigo:
+- `catalogo/fm/reglas.csv` y `conceptos.csv`: 26 reglas activas (20 del generador oficial de la CMF, 3 cruces entre estados y 3 de continuidad) y los 88 codigos del modelo con estado, orden, clave corta, signo oficial y glosa. `catalogo/extraer_oficial.py` los saca de la planilla generadora (cifrada con la clave de solo lectura de Excel; se guarda como .xlsx) y las pruebas comparan el catalogo contra esa extraccion. Dos reglas oficiales del ECP (distribucion = efectivo + cuotas; despues = antes + distribucion) quedan inactivas hasta medirlas.
+- `motor/hechos.py`: una tabla larga por documento (`hechos_xml.parquet`, 1.078.117 cifras del ultimo envio; `hechos_pdf.parquet`, 438.862 cifras de los renglones con codigo del lector).
+- `motor/reglas.py`: evalua las reglas del catalogo por columna, entre columnas, o sobre cifras sueltas (`evaluar`).
+El 07, el 03b (subtotales) y el 03c (identidades) leen las reglas del catalogo; cada migracion se verifico identica a la anterior (prueba de equivalencia y diff contra la foto sin cambios).
+
+**Hallazgos de la planilla oficial.** El EFE indirecto no tiene formula para el aumento neto (se digita): la regla operacion + financiamiento = aumento es del proyecto. El codigo del saldo final del EFE indirecto viene con un espacio al final en la propia planilla: es el origen de los 76 XML con ese espacio (hallazgo 4 del README).
+
+**Medicion: reglas sobre los hechos del PDF contra el 03b y el 03c.** El motor toma el mismo subtotal impreso en el 100% de los casos. Acuerdo con el 03c: 99,99% (26.171 identidades) usando el signo oficial en las partes (el PDF imprime signos de presentacion: gastos sin parentesis). Acuerdo con el 03b: 99,45% (70.588 subtotales). Los desacuerdos tienen dos causas independientes: el 03b suma por POSICION y falla cuando el corte del bloque se equivoca (un numero de nota, el titulo, el bloque vecino); el motor suma por CODIGO y falla cuando el emparejador no asigno el codigo (293 casos). En una muestra de 12 de los 89 donde el 03b no cuadra y el motor si, ninguno era una linea real que el motor dejara fuera: 5 eran sumas de mas del 03b, 4 una linea con el signo invertido (lectura o formato) y 3 el signo del subtotal. Consecuencia para el lector: dos lecturas independientes; si alguna cuadra no es error, si ninguna cuadra es candidato y va al arbol del 03g.
+
+**Regla 1 (03c): el resultado con el signo invertido es error del PDF.** Si todos los terminos de una identidad son iguales al XML en valor absoluto, el XML cuadra y el total (utilidad, activo neto) tiene el signo contrario al XML, el PDF informa el resultado al reves. Antes quedaba como `revisar_signo` (fuera del conteo). Verificado 2 de 2: dos ERI, con el resultado correcto en el ECP del mismo PDF y corregidos al anio siguiente.
+
+**Regla 2 (04c): la suma por codigo baja lecturas del 03b.** Si la suma por codigo con el SIGNO IMPRESO cuadra con el mismo subtotal impreso que leyo el 03b, la senal del 03b baja a lectura; si el error es real lo ven otras etapas y el caso se mantiene (un EFE corregido al anio siguiente). Solo con el signo impreso: con el signo oficial tambien "cuadraria" un saldo inicial negativo mal impreso (un error confirmado de D-CU16), que es una cifra mala y no presentacion. Cambia 1 caso (un total de ingresos que si suma).
+
+**Efecto.** Errores 350 -> 351 (+2 regla 1, -1 regla 2); fondo-anio con error 281 -> 283 (6,3%); celdas con error 298 -> 299 (1,68%); los grupos de AGF no cambian.
+
+**Resguardo.** Un error de programacion en la regla 1 (una variable que pisaba el diccionario de subtotales) hizo que el 03c evaluara 1 fondo-anio de 4.400; la cadena siguio y el 04 se cayo al final. El 03b, el 03c y el 03d se autochequean: si evaluan menos del 90% de su universo se detienen antes de escribir sus salidas (`comun/autochequeo.py`). La foto de comparacion cubre ahora tambien el 07, el 03g, el 04d y las cifras de portada.
+
+**Pendiente.** Lector con estructura (que renglones forman cada subtotal) para pasar el 03b al motor con las dos lecturas; regla de error de origen (un error arrastrado cuenta una vez); observaciones de formato (parentesis sin pareja) como categoria propia.
