@@ -19,7 +19,7 @@ por posicion (orden, rol, bloque) y si la pagina es OCR o espaciada. archivo = "
 
 Uso:
     python motor/hechos.py          reconstruye y resume
-    from motor import hechos; h = hechos.xml(); p = hechos.pdf()
+    from motor import hechos; h = hechos.xml(); p = hechos.pdf(); e = hechos.ecp()
 """
 import sys
 
@@ -120,6 +120,19 @@ def pdf(reconstruir: bool = False) -> pd.DataFrame:
         h.to_parquet(RUTA_PDF, index=False)
         return h
     return pd.read_parquet(RUTA_PDF)
+
+
+def ecp() -> pd.DataFrame:
+    """Hechos del ECP del PDF (ecp_celdas.csv del 03d): una fila por celda leida, por serie y Total,
+    con el mismo formato que los demas hechos del PDF (archivo = "rut_anio", contexto, estado, codigo,
+    serie '' = Total) y lo propio del ECP: fila leida (inicio, aportes, ...), k (columna en el bloque)."""
+    c = pd.read_csv(P / "ecp_celdas.csv", dtype={"rut": str, "codigo": str, "serie": str}, keep_default_na=False,
+                    na_values={"valor": [""]})
+    c["archivo"] = c["rut"] + "_" + c["anio"].astype(str)
+    c["contexto"] = c["columna"].map({"actual": "PeriodoActual", "anterior": "PeriodoAnterior"})
+    c["estado"] = "ECP"
+    return c[["archivo", "rut", "anio", "contexto", "estado", "codigo", "serie", "valor", "pagina", "ocr",
+              "fila", "k", "es_total"]]
 
 
 def main():

@@ -31,8 +31,11 @@ se emparejan con las del XML). Clases de lo que no cuadra:
   revisar_sin_xml       total sin cifras XML para comparar
   observacion_inmaterial  diferencia bajo el umbral de materialidad
 
-Lee:      cruce_resumen.csv (ok, sin_texto y sin_paginas_de_estados), encabezados.csv, cuentas.csv, identidades.csv y lineas_03c.csv (03c), coords_pdf/
+Lee:      cruce_resumen.csv (ok, sin_texto y sin_paginas_de_estados), encabezados.csv, hechos del XML,
+          lineas_03c.csv (03c: activo neto del ESF y resultado del ERI), coords_pdf/
 Escribe:  data/procesado/ecp_bloques.csv     1 fila por fondo-anio-bloque (que se leyo)
+          data/procesado/ecp_celdas.csv      1 fila por celda leida (fila x serie/total), con su codigo
+                                             del catalogo: los hechos del ECP (motor/hechos.ecp)
           data/procesado/ecp_chequeos.csv    1 fila por chequeo
           data/procesado/ecp_no_cuadra.csv   los que no cuadran, clasificados
 """
@@ -48,6 +51,7 @@ from comun.lector import leer_estados, paginas_de
 from comun.lector_espacial import cargar_coords
 from comun.lector_multicolumna import columna_total, filas_multicolumna
 from config import CMF_HOME, casos_conocidos, umbral_materialidad
+from motor import hechos
 
 DIR_PROC = CMF_HOME / "procesado"
 TOL = 2
@@ -91,6 +95,22 @@ XML = {  # codigos del total del fondo (sin serie)
     "res_despues": "AumentoDisminucionDelActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios",
     "cierre": "ActivoNetoAtribuibleAParticipesAl31DeDiciembreValorCuota",
 }
+
+
+# fila leida -> codigo del catalogo (ECP); la serie lleva el codigo "...PorSerie"
+CODIGO_FILA = {**XML, "dist": "DistribucionDeBeneficios", "dist_partes": "DistribucionDeBeneficios"}
+
+
+def celdas(base, col, b):
+    """Celdas del bloque aceptado como hechos: fila, columna leida (k), si es el Total, codigo y valor."""
+    t = b["total"]
+    for fila, vals in b["filas"].items():
+        cod = CODIGO_FILA.get(fila, "")
+        for k, v in vals.items():
+            es_t = k == t
+            yield {**base, "columna": col, "pagina": b["pagina"], "ocr": b["ocr"], "fila": fila, "k": k,
+                   "es_total": es_t, "serie": "" if es_t else f"serie_{k + 1}",
+                   "codigo": cod if es_t or not cod else cod + "PorSerie", "valor": v}
 
 
 # --------------------------------------------------------------------------- lectura
@@ -545,21 +565,10 @@ def clasificar(r, suma_ok, umbral):
 
 
 # --------------------------------------------------------------------------- principal
-def esf_activo_neto():
-    """(rut, anio, columna) -> (pdf, xml) del activo neto del ESF, de la salida del 03c."""
-    ruta = DIR_PROC / "identidades.csv"
-    if not ruta.exists():
-        return {}
-    i = pd.read_csv(ruta, dtype={"rut": str})
-    i = i[i["identidad"] == "activo_menos_pasivo"]
-    num = lambda s: (lambda m: float(m.group(1)) if m else None)(re.search(r"activo_neto=(-?[\d.]+)", str(s)))
-    return {(r.rut, r.anio, r.columna): (num(r.pdf), num(r.xml)) for r in i.itertuples()}
-
-
-def resultado_eri(linea="resultado_eri"):
-    """(rut, anio, columna) -> (pdf, xml, metodo) del "aumento de activo neto antes de
-    distribucion" del ERI (o "despues", con linea="resultado_eri_despues"), ubicado por el 03c
-    (lineas_03c.csv)."""
+def linea_03c(linea):
+    """(rut, anio, columna) -> (pdf, xml, metodo) de una linea ubicada por el 03c (lineas_03c.csv): el
+    activo neto del ESF, el resultado del ERI antes o despues de distribucion. Antes el activo neto se
+    sacaba del texto de identidades.csv, y solo cuando la identidad del ESF se pudo evaluar."""
     ruta = DIR_PROC / "lineas_03c.csv"
     if not ruta.exists():
         return {}
@@ -576,14 +585,13 @@ def main():
     ok = (res[res["estado"].isin(["ok", "sin_texto", "sin_paginas_de_estados"]) & res["pdf"].notna()]
           .drop(columns=["moneda"], errors="ignore")
           .merge(enc, on=["rut", "anio"]))
-    cta = pd.read_csv(DIR_PROC / "cuentas.csv", usecols=["archivo", "contexto", "codigo", "serie", "valor"],
-                      dtype={"serie": str})
-    cta = cta[cta["serie"].isna() & cta["codigo"].isin(XML.values()) & cta["archivo"].isin(ok["archivo"])]
-    xml_de = {a: {(c, k): v for c, k, v in zip(g["contexto"], g["codigo"], g["valor"].fillna(0))}
+    cta = hechos.xml()
+    cta = cta[(cta["serie"] == "") & cta["codigo"].isin(XML.values()) & cta["archivo"].isin(ok["archivo"])]
+    xml_de = {a: {(c, k): v for c, k, v in zip(g["contexto"], g["codigo"], g["valor"])}
               for a, g in cta.groupby("archivo")}
-    esf = esf_activo_neto()
-    eri = resultado_eri()
-    eri_d = resultado_eri("resultado_eri_despues")
+    esf = linea_03c("activo_neto")
+    eri = linea_03c("resultado_eri")
+    eri_d = linea_03c("resultado_eri_despues")
     ruta_nc = DIR_PROC / "identidades_no_cuadra.csv"
     err_03c = set()
     if ruta_nc.exists():
@@ -591,7 +599,7 @@ def main():
         n3 = n3[(n3["identidad"] == "activo_menos_pasivo") & n3["clase"].str.startswith("probable_error")]
         err_03c = set(zip(n3["rut"], n3["anio"], n3["columna"]))
 
-    filas_b, filas_c = [], []
+    filas_b, filas_c, filas_cel = [], [], []
     for r in ok.itertuples(index=False):
         coords = cargar_coords(r.rut, r.anio, r.pdf)
         if coords is None:
@@ -636,6 +644,7 @@ def main():
             if col is None or col in por_col:
                 continue                                  # bloque de otro anio o repetido
             por_col[col] = b
+            filas_cel += celdas(base, col, b)
             filas_b.append({**base, "columna": col, "pagina": b["pagina"], "n_cols": b["n_cols"],
                             "total": b["total"], "filas": ",".join(sorted(b["filas"])), "ocr": b["ocr"],
                             "fechado_por": b.get("fechado_por", "texto"), "anio_texto": b.get("anio_texto"),
@@ -790,6 +799,8 @@ def main():
     exigir("03d", int((bl["columna"] == "actual").sum()) if len(bl) else 0, len(ok), "fondo-anio con bloque actual del ECP")
     bl.to_csv(DIR_PROC / "ecp_bloques.csv", index=False, encoding="utf-8-sig")
     ch.to_csv(DIR_PROC / "ecp_chequeos.csv", index=False, encoding="utf-8-sig")
+    pd.DataFrame(filas_cel).drop(columns=["nombre_agf", "moneda"]).to_csv(DIR_PROC / "ecp_celdas.csv", index=False,
+                                                                           encoding="utf-8-sig")
     nc = ch[ch["clase"] != "cuadra"]
     nc.to_csv(DIR_PROC / "ecp_no_cuadra.csv", index=False, encoding="utf-8-sig")
 
