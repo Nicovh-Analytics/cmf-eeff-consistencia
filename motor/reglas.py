@@ -16,6 +16,8 @@ positivos). Con signo_oficial=True cada PARTE cuyo signo en el modelo oficial es
 catalogo/fm/conceptos.csv) se toma como signo * |valor|. Los totales y las partes "+ o -" quedan como se
 imprimieron: el modelo marca el flujo neto como "(+)" aunque pueda ser negativo.
 """
+from functools import lru_cache
+
 import pandas as pd
 
 import catalogo
@@ -37,6 +39,7 @@ def _columna(w: pd.DataFrame, cod: str):
     return v
 
 
+@lru_cache(maxsize=None)
 def signos_estrictos(entidad: str = "fm") -> dict:
     """{'ERI:ComisionDeAdministracion': -1, 'EFE:VentaCobroDeActivosFinancieros': 1, ...}"""
     c = catalogo.conceptos(entidad)
@@ -80,6 +83,13 @@ def entre_columnas(hechos: pd.DataFrame, entidad: str = "fm", pares: dict | None
     return pd.concat(filas) if filas else pd.DataFrame(columns=["identidad", "total", "suma_partes"])
 
 
+@lru_cache(maxsize=None)
+def _regla(id_regla: str, entidad: str) -> dict:
+    """La regla del catalogo como dict, una vez: evaluar se llama por cifra (decenas de miles de veces) y
+    filtrar el DataFrame del catalogo en cada llamada costaba mas que la evaluacion."""
+    return dict(catalogo.regla(id_regla, entidad))
+
+
 def evaluar(id_regla: str, valores: dict, entidad: str = "fm") -> tuple:
     """Una regla sobre cifras sueltas (una columna de un documento), con el signo como se imprimio.
 
@@ -92,7 +102,7 @@ def evaluar(id_regla: str, valores: dict, entidad: str = "fm") -> tuple:
             signo estricto invertida (perdida impresa sin parentesis, ingresos netos negativos). Decide
             si cuadra: un signo invertido no es un error de cifra.
     """
-    r = catalogo.regla(id_regla, entidad)
+    r = _regla(id_regla, entidad)
     sig = signos_estrictos(entidad)
 
     def norm(termino, normalizar=True):
