@@ -33,6 +33,7 @@ ETAPAS = [
 ("03f", "validaciones/fidelidad/03f_documento.py",     "documento: periodo, PDF sin estados",            True,  []),
 ("03g", "validaciones/estructura/03g_localizacion.py", "cual cifra esta mala si un subtotal no suma",    True,  []),
 ("03h", "validaciones/formato/03h_formato.py",          "formato de presentacion vs modelo CMF",          True,  []),
+("03i", "validaciones/testigos/03i_testigo_cmf.py",     "testigo CMF: patrimonio por fondo y serie",       True,  []),
 ("04",  "consolidacion/04_candidatos.py",              "candidatos PDF vs XML (espejo)",                 True,  []),
 ("04b", "consolidacion/04b_casos.py",                  "casos por linea con sus 4 versiones",            True,  []),
 ("04c", "consolidacion/04c_casos_unicos.py",           "conteo unico de casos",                          True,  []),

@@ -17,6 +17,8 @@ Senales (esquema comun: fuente, rut, anio_doc, documento, columna, estado, linea
   lector renglones_pdf.csv (03b)     titulo de otro estado sobre la pagina (presentacion)
   03h   formato.csv                  glosa de otra cuenta, montos impresos una linea corridos, estado
                                      impreso dos veces (presentacion, un caso por fondo-anio y tipo)
+  03i   testigo_cmf.csv              el envio diario de la AGF a la CMF al 31-dic (activo neto y total del
+                                     ESF): arbitro entre PDF y XML; activo neto de los EEFF distinto del envio
   03f   documento_periodo.csv        el XML (o el PDF) no es el documento de ese fondo-anio: un caso
                                      por fondo-anio que absorbe las senales que comparan PDF con XML
 Clase: error / presentacion forman casos; lectura, inmaterial y revisar quedan como contexto.
@@ -347,6 +349,53 @@ def senales_rotulos():
     return pd.concat(out, ignore_index=True)
 
 
+def senales_testigo():
+    """03i: el envio diario de la AGF a la CMF al 31-dic como tercer documento (activo neto y total activo
+    del ESF). Si coincide con uno de los dos y no con el otro, dice de que lado esta el error:
+      xml_distinto  PDF = CMF, el XML no                     -> error del XML (revision: 8107 2013, confirmado)
+      pdf_distinto  XML = CMF, el PDF no, por menos de 1%, en el activo neto -> error del PDF (8976 2014: un
+                    digito, confirmado); en el total activo, revisar (8710 y 8787 2011: el PDF no trae los
+                    estados y se leyo el total de la cartera de una nota; 9623 2025: el PDF suma bien). Con
+                    1% o mas o el PDF en 0 es lectura nuestra (2011: el ESF de 3 columnas)
+      eeff_vs_cmf   PDF = XML y el envio diario distinto (activo neto) -> difiere_envio_diario: ajuste
+                    posterior al cierre o error en uno de los dos lados (9019 2014: los EEFF informan como
+                    activo neto el activo total del envio; la diferencia son los pasivos del envio)
+    El total activo de los EEFF difiere del ACTIVO_TOT del envio en varias AGF por definicion: ahi el
+    patron eeff_vs_cmf no se usa."""
+    ruta = P / "testigo_cmf.csv"
+    if not ruta.exists():
+        print("(sin testigo_cmf.csv: correr el 03i)")
+        return pd.DataFrame(columns=COLS)
+    t = pd.read_csv(ruta, dtype={"rut": str, "patron": str}, low_memory=False)
+    t = t[t["testigo"].isin(["activo_neto", "activo_total"])].copy()
+    linea = t["testigo"].map({"activo_neto": "activo_neto", "activo_total": "total_activo"})
+    f = lambda v: "-" if pd.isna(v) else f"{v:,.0f}"
+    t["detalle"] = [f"CMF {f(c)} | XML {f(x)} | PDF {f(p)}" for c, x, p in zip(t["cmf"], t["xml"], t["pdf"])]
+    xd = t["patron"] == "xml_distinto"
+    pd_ = t["patron"] == "pdf_distinto"
+    # solo en el activo neto: el total activo del envio no siempre es el de los EEFF (definicion), y un PDF
+    # de 2011 sin los estados (solo notas) deja leer como "Total activos" el de la cartera de la nota
+    # (8710 y 8787 2011: la diferencia es el efectivo). Ahi el PDF distinto queda en revisar.
+    pdf_err = pd_ & (t["testigo"] == "activo_neto") & (t["pdf"] != 0) & (t["rel_pdf"].abs() < 0.01)
+    pdf_rev = pd_ & (t["testigo"] == "activo_total") & (t["pdf"] != 0) & (t["rel_pdf"].abs() < 0.01)
+    ev = (t["patron"] == "eeff_vs_cmf") & (t["testigo"] == "activo_neto")
+    sel = xd | pd_ | ev
+    x = t[sel]
+    doc = pd.Series("PDF", index=x.index).where(~xd[sel], "XML").where(~ev[sel], "PDF+XML")
+    dif = x["dif_pdf"].where(~xd[sel], x["dif_xml"]).where(~ev[sel], x["dif_xml"])
+    clase = pd.Series("lectura", index=x.index)
+    clase[xd[sel] | pdf_err[sel]] = "error"
+    clase[pdf_rev[sel]] = "revisar"
+    clase[ev[sel]] = "presentacion"
+    print(f"03i: XML distinto del PDF y de la CMF {int(xd.sum())}; PDF distinto {int(pd_.sum())} "
+          f"({int(pdf_err.sum())} por menos de 1%: error; el resto, lectura); activo neto de los EEFF "
+          f"distinto del envio diario {int(ev.sum())}")
+    return pd.DataFrame({"fuente": "03i", "rut": x["rut"], "anio_doc": x["anio"], "documento": doc,
+                         "columna": "actual", "estado": "ESF", "linea": linea[sel], "nivel": "total", "dif": dif,
+                         "clase": clase, "forma": "testigo_cmf/" + x["patron"].astype(str), "detalle": x["detalle"],
+                         "pagina": pd.NA})
+
+
 def senales():
     s = []
     # 03b: subtotal que no suma (PDF)
@@ -483,6 +532,7 @@ def senales():
                                            for a, b in zip(dp["normal"], dp["xml_repite"])],
                                "pagina": pd.NA}))
     s.append(senales_rotulos())
+    s.append(senales_testigo())
     s.append(senales_04())
     t = pd.concat(s, ignore_index=True)
     t = t.reindex(columns=COLS + ["grupo"])
@@ -608,6 +658,7 @@ def tipificar(t):
             tipo = ("desglose" if "desglose" in f else "rotulo" if "rotulo" in f else
                     "titulo_otro_estado" if "titulo_otro" in f else "glosa_otra_cuenta" if "glosa_otra" in f else
                     "monto_desalineado" if "desalineado" in f else "pagina_repetida" if "repetida" in f else
+                    "difiere_envio_diario" if "eeff_vs_cmf" in f else
                     "glosa" if "glosa" in f else
                     "agregacion_xml" if "agregacion" in f else
                     "reexpresion" if "reexpresion" in f else "criterio" if "criterio" in f else "reclasificacion")
