@@ -23,3 +23,6 @@ AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaO
 CambiosNetosEnValorRazonableDeActivosYPasivosFinancierosAValorRazonableConEfectoEnResultados,ERI,cambiosnetosenvalorrazonable,,
 InteresesDiferenciasDeCambioYReajustesRecibidos,EFE,^(intereses|cupones).*reajustes?recibidos,,"tambien 'Cupones y reajustes recibidos'"
 DistribucionDeBeneficios,ERI,^(total)?distribuci,activos?netos?|aumento,"el resultado despues de distribucion trae las mismas palabras: sin esto la similitud lo da por la distribucion"
+AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionDespuesDeDistribucionDeBeneficios,ERI,^totalresultadointegral,,"ultima linea del ERI en algunas AGF (10329 2023: igual al despues de distribucion)",0.9
+Otros,EFE,^otros$,gastos|ingresos|operaci,"""Otros"" a secas (financiamiento): la similitud le daba 0,99 a ""Otros gastos de operacion percibidos"""
+OtrosGastosDeOperacionPagados,EFE,^otrosgastos(de)?(la)?operaci,,"""pagados"" o ""percibidos"" (redaccion de algunas AGF)"

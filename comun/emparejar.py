@@ -47,6 +47,26 @@ def duplicada(glosa):
     return len(t) >= 6 and t[0::2] == t[1::2]
 
 
+def paginas_repetidas(rs, minimo=0.8):
+    """Paginas que repiten el estado de una pagina anterior: al menos el 80% de sus renglones con montos
+    tienen la misma glosa y los mismos montos (+-2) en otra pagina anterior. Es el mismo estado impreso dos
+    veces (hallazgo de formato); solo la primera toma cuentas."""
+    filas = {}
+    for r in rs:
+        if r["actual"] is not None or r["anterior"] is not None:
+            filas.setdefault(r["pagina"], []).append((norm(r["glosa"]), r["actual"] or 0, r["anterior"] or 0))
+    out, vistas = set(), []
+    for p in sorted(filas):
+        f = filas[p]
+        igual = sum(any(g == g2 and abs(a - a2) <= TOL and abs(b - b2) <= TOL for g2, a2, b2 in vistas)
+                    for g, a, b in f)
+        if len(f) >= 3 and igual >= minimo * len(f):
+            out.add(p)
+        else:
+            vistas += f
+    return out
+
+
 def paginas_nucleo(rs, punt):
     """Paginas del estado: la que tiene mas renglones con montos reconocidos por la glosa y las contiguas
     que tambien tienen alguno. El lector puede dejar en el estado paginas de notas (cartera de inversiones,
@@ -224,6 +244,11 @@ def _por_posicion(rs, con_monto, punt, cods, can, orden, usados_c, cod_glosa):
     for c in cods:
         if orden.get(c) is not None:
             orden_c.setdefault(can(c), orden[c])
+    # metodo del EFE: si ninguna cuenta asignada por glosa es propia del indirecto, el estado es del directo
+    # y la posicion no puede tomar cuentas del indirecto (su hueco en la plantilla no es de este estado)
+    met = _metodo()
+    indirecto = any(met.get(c) == "indirecto" for c in usados_c)
+    admisibles = {x for x in orden_c if indirecto or met.get(x) != "indirecto"}
 
     def vecino(i, paso):
         j = i + paso
@@ -250,14 +275,19 @@ def _por_posicion(rs, con_monto, punt, cods, can, orden, usados_c, cod_glosa):
         if (k is not None and punt[i][mejor] >= MIN_GLOSA and c in orden_c
                 and norm(rs[k]["glosa"]) == norm(rs[i]["glosa"])
                 and abs(punt[k].get(rs[k]["codigo"], 0) - punt[i][mejor]) < 1e-9):
-            m = [x for x, o in orden_c.items() if abs(o - orden_c[c]) == 1 and x not in presentes]
+            m = [x for x, o in orden_c.items() if abs(o - orden_c[c]) == 1 and x not in presentes and x in admisibles]
             if len(m) == 1:
                 arriba, abajo = sorted((i, k))
                 bajo, alto = sorted((m[0], c), key=orden_c.get)
-                cod_k = rs[k]["codigo"]
-                asignar(arriba, bajo, cod_k if arriba == k else mejor)
-                rs[abajo]["codigo"], rs[abajo]["coincide"], rs[abajo]["glosa_de"] = (
-                    cod_k if abajo == k else mejor), "glosa", None
+                cod = {c: rs[k]["codigo"], m[0]: m[0]}
+                # el que recibe la cuenta contigua queda por posicion (rotulo de la otra); el otro, por glosa
+                for fila, x in ((arriba, bajo), (abajo, alto)):
+                    if x == c:
+                        rs[fila]["codigo"], rs[fila]["coincide"], rs[fila]["glosa_de"] = cod[c], "glosa", None
+                    else:
+                        asignar(fila, x, mejor)
+                usados_c.add(c)
+                presentes.add(c)
                 continue
         # 2. hueco en la plantilla
         lo, hi = vecino(i, -1), vecino(i, 1)
@@ -270,7 +300,10 @@ def _por_posicion(rs, con_monto, punt, cods, can, orden, usados_c, cod_glosa):
             sim[can(x)] = max(sim.get(can(x), 0), punt[i].get(x, 0))
         faltan = {x for x, o in orden_c.items() if lo < o < hi and x not in presentes and sim.get(x, 0) >= MIN_POSICION}
         # una glosa de total ("Total pasivos corrientes") solo toma un total: no una linea del bloque
-        if RE_TOTAL.search(norm(rs[i]["glosa"])):
+        faltan &= admisibles
+        # una glosa de total ("Total pasivos corrientes") o un titulo con montos ("Ingresos de la operacion:")
+        # solo toma un total: no una linea del bloque
+        if RE_TOTAL.search(norm(rs[i]["glosa"])) or str(rs[i]["glosa"]).rstrip().endswith(":"):
             faltan &= tot
         if len(faltan) == 1:
             asignar(i, next(iter(faltan)), mejor)
@@ -302,8 +335,11 @@ def emparejar(rs, xml, estado, glosario=True, corridos=True, vocabulario=None, c
             for r in rs]
     if vocabulario is not None:
         nucleo = paginas_nucleo(rs, punt)
-        punt = [{} if duplicada(r["glosa"]) or (nucleo is not None and r["pagina"] not in nucleo) else p
-                for r, p in zip(rs, punt)]
+        rep_ = paginas_repetidas(rs)
+        for r in rs:
+            r["pagina_repetida"] = r["pagina"] in rep_
+        punt = [{} if duplicada(r["glosa"]) or (nucleo is not None and r["pagina"] not in nucleo) or r["pagina"] in rep_
+                else p for r, p in zip(rs, punt)]
     cod_glosa = []
     for p in punt:
         c = max(p, key=p.get) if p else None
@@ -314,6 +350,7 @@ def emparejar(rs, xml, estado, glosario=True, corridos=True, vocabulario=None, c
     # 3. uno a uno: glosa, luego valor
     for r in rs:
         r["codigo"], r["coincide"], r["glosa_de"], r["monto_de"] = None, None, None, None
+        r["monto_de_vecino"] = False
     con_monto = [i for i, r in enumerate(rs) if (r["actual"] is not None or r["anterior"] is not None)
                  and r["metodo"] != "encabezado"]
     v = lambda i: (rs[i]["actual"], rs[i]["anterior"])
@@ -356,8 +393,23 @@ def emparejar(rs, xml, estado, glosario=True, corridos=True, vocabulario=None, c
             # solo si la cuenta de la glosa esta en el XML con OTRO monto: sin ella no hay cruce, solo
             # dos cuentas con el mismo monto (subtotal = flujo neto cuando no hay mas lineas)
             if c and rs[i]["coincide"] in ("glosa", "posicion") and any(x is not None for x in xml[c]):
-                rs[i]["monto_de"] = next((k for k, x in xml_todo.items()
-                                          if can(k) != can(c) and calza_todo(v(i), x)), None)
+                cand = [k for k, x in xml_todo.items() if can(k) != can(c) and calza_todo(v(i), x)]
+                # si una de las cuentas que calzan es la de la glosa del renglon de al lado (sin montos), los
+                # montos quedaron impresos una linea corridos: es esa (10383 2023: los del "antes de
+                # distribucion", de tres lineas, impresos en la linea de "Distribucion de beneficios")
+                sin_m = lambda j: 0 <= j < len(rs) and rs[j]["actual"] is None and rs[j]["anterior"] is None
+                arriba = []
+                j = i - 1
+                while sin_m(j) and len(arriba) < 3:      # glosa de hasta 3 lineas sin montos justo encima
+                    arriba.insert(0, rs[j]["glosa"])
+                    j -= 1
+                textos = [" ".join(arriba)] if arriba else []
+                if sin_m(i + 1):
+                    textos.append(rs[i + 1]["glosa"])
+                junto = [k for k in cand if any(puntaje_glosa(dict(glosa=t, previa=""), k, estado) >= MIN_GLOSA
+                                                for t in textos)]
+                rs[i]["monto_de"] = (junto or cand or [None])[0]
+                rs[i]["monto_de_vecino"] = bool(junto)
     return rs
 
 
@@ -396,6 +448,15 @@ def _totales(entidad="fm"):
     r = catalogo.reglas(entidad)
     _, canon = _catalogo(entidad)
     return frozenset(canon.get(a.split(":", 1)[1], a.split(":", 1)[1]) for t in r["total"] for a in t.split("|"))
+
+
+@lru_cache(maxsize=None)
+def _metodo(entidad="fm"):
+    """{concepto: "indirecto"} para las cuentas propias del metodo indirecto del EFE (sin sinonimo directo)."""
+    import catalogo
+    c = catalogo.conceptos(entidad)
+    c = c[(c["metodo"].fillna("") == "indirecto") & (c["alternativo_de"].fillna("") == "")]
+    return {k: "indirecto" for k in c["codigo"]}
 
 
 @lru_cache(maxsize=None)

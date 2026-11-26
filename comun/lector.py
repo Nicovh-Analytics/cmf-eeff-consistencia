@@ -25,7 +25,7 @@ Salida de leer_estados: lista de dicts
 import re
 import unicodedata
 
-from comun.lector_espacial import filas_espaciales
+from comun.lector_espacial import _valor_espacial, filas_espaciales, tipo_formato
 
 ESTADOS = ("ESF", "ERI", "ECP", "EFE")
 
@@ -192,11 +192,13 @@ def leer_estados(coords, paginas, base=None):
     informe del auditor, indice)."""
     out, pags = [], {}
     estado, n_por_estado = None, {}
+    irr_pag = {}
     for p in paginas:
         pg = coords["paginas"].get(str(p)) if coords else None
         if not pg:
             continue
-        filas, _ = filas_espaciales(pg)
+        filas, irr = filas_espaciales(pg)
+        irr_pag[p] = [(abs(_valor_espacial(t)[0] or 0), f"{tipo_formato(t) or 'miles'}:{t}") for t in irr]
         encab = [(a is None and b is None) or es_encabezado(g, a, b) for g, a, b, _ in filas]
         titulos = {titulo(g) for (g, *_), e in zip(filas, encab) if e} - {None}
         cuenta = contar_anclas(filas)
@@ -270,4 +272,9 @@ def leer_estados(coords, paginas, base=None):
                         "metodo": "encabezado" if sin_cifras and not sin_monto else "espacial",
                         "rotulo": rotulo})
             previas = (previas + [glosa.strip()])[-2:] if sin_monto else []
+    # formato: el monto impreso fuera de la convencion queda en su renglon (por pagina y valor)
+    for r in out:
+        vals = {abs(v) for v in (r["actual"], r["anterior"]) if v}
+        f = [t for v, t in irr_pag.get(r["pagina"], []) if v and v in vals]
+        r["formato"] = " ".join(dict.fromkeys(f)) or None
     return out, pags

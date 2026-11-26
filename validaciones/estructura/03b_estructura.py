@@ -433,7 +433,8 @@ def main():
             renglones_out += [dict(rut=r.rut, anio=r.anio, estado=est, pagina=q["pagina"], glosa=q["glosa"],
                                    actual=q["actual"], anterior=q["anterior"], codigo=q.get("codigo"),
                                    coincide=q.get("coincide"), metodo=q["metodo"], rotulo=q.get("rotulo"),
-                                   glosa_de=q.get("glosa_de"), monto_de=q.get("monto_de"), codigo_plantilla=q.get("codigo_plantilla"), ocr=q["pagina"] in ocr,
+                                   glosa_de=q.get("glosa_de"), monto_de=q.get("monto_de"), monto_de_vecino=q.get("monto_de_vecino"), codigo_plantilla=q.get("codigo_plantilla"),
+                                   formato=q.get("formato"), pagina_repetida=q.get("pagina_repetida"), ocr=q["pagina"] in ocr,
                                    espaciada=q["pagina"] in espaciadas) for q in rs]
         for f in analizar_fondo(renglones, xml, espaciadas, ocr, int(r.anio)):
             filas.append({"rut": r.rut, "anio": r.anio, "nombre_agf": r.nombre_agf, "moneda": r.moneda, **f})

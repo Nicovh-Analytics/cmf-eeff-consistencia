@@ -14,9 +14,9 @@ Senales (esquema comun: fuente, rut, anio_doc, documento, columna, estado, linea
   03d   ecp_bloques.csv              glosa con el anio desactualizado (presentacion)
   04b   casos_senales.csv            las 12 lineas con sus cuatro versiones (patron -> celda)
   07    identidades_xml.csv          identidad rota dentro del XML (falla_grande)
-  lector renglones_pdf.csv (03b)     rotulos del PDF (presentacion, un caso por fondo-anio y tipo):
-                                     titulo de otro estado sobre la pagina; glosa de otra cuenta
-                                     sobre un renglon (pares revisados en PARES_GLOSA)
+  lector renglones_pdf.csv (03b)     titulo de otro estado sobre la pagina (presentacion)
+  03h   formato.csv                  glosa de otra cuenta, montos impresos una linea corridos, estado
+                                     impreso dos veces (presentacion, un caso por fondo-anio y tipo)
   03f   documento_periodo.csv        el XML (o el PDF) no es el documento de ese fondo-anio: un caso
                                      por fondo-anio que absorbe las senales que comparan PDF con XML
 Clase: error / presentacion forman casos; lectura, inmaterial y revisar quedan como contexto.
@@ -47,31 +47,20 @@ ESTADO = {"total_activo": "ESF", "total_pasivo": "ESF", "activo_neto": "ESF", "e
 TOTAL = {"activo_neto", "resultado_eri", "resultado_eri_despues", "saldo_final", "total_activo", "total_pasivo",
          "evolucion_efectivo"}
 NIVEL = {"documento": -1, "linea": 0, "subtotal": 1, "total": 2, "identidad": 3}
-# Glosa de otra cuenta impresa sobre un renglon: (cuenta del renglon, cuenta de la glosa) -> palabra que
-# la glosa tiene que decir. Revision (muestra estratificada por par, 2026-11-12): estos 6 pares eran
-# rotulos del PDF ("Flujo neto ... operacion" sobre financiamiento, dos filas "antes"/"despues" de
-# distribucion o de impuesto, "Total pasivo" sobre el activo neto). Los demas pares eran lectura
-# (glosa partida), otro codigo XML para el mismo concepto, un XML desfasado (03f) o el glosario.
-_ANTES_D = "AumentoDisminucionDeActivoNetoAtribuibleAParticipesOriginadasPorActividadesDeLaOperacionAntesDeDistribucionDeBeneficios"
-_DESPUES_D = _ANTES_D.replace("AntesDe", "DespuesDe")
-PARES_GLOSA = {
-    ("FlujoNetoOriginadoPorActividadesDeFinanciamiento", "FlujoNetoOriginadoPorActividadesDeLaOperacion"): r"operaci",
-    (_DESPUES_D, _ANTES_D): r"antesde(la)?distribu",
-    (_ANTES_D, _DESPUES_D): r"despuesde(la)?distribu",
-    ("UtilidadPerdidaDeLaOperacionAntesDeImpuesto", "UtilidadPerdidaDeLaOperacionDespuesDeImpuesto"): r"despuesdeimpuesto",
-    ("ActivoNetoAtribuibleALosParticipes", "TotalPasivo"): r"totalpasivo",
-    # "Cambios netos en valor razonable ... a costo amortizado" sobre las diferencias de cambio (1 caso, confirmado)
-    ("DiferenciasDeCambioNetasSobreActivosFinancierosACostoAmortizado",
-     "CambiosNetosEnValorRazonableDeActivosYPasivosFinancierosAValorRazonableConEfectoEnResultados"):
-        r"valorrazonable.*costoamortizado",
-}
-PLANTILLA = "rotulo|glosa_desactualizada|titulo_otro_estado|glosa_otra_cuenta"
+# Glosa de otra cuenta, montos impresos una linea corridos y estado impreso dos veces: los decide el 03h
+# (formato.csv). Hasta v1 la glosa de otra cuenta se filtraba con una lista de pares revisados (PARES_GLOSA,
+# muestra 2026-11-12); el 03h la reemplaza con una regla general: la glosa es casi la oficial de la otra cuenta
+# y dice la palabra que la distingue de la propia ("antes"/"despues", "financiamiento"/"operacion").
+FORMATO = {"rotulo_otra_cuenta": "glosa_otra_cuenta", "monto_desalineado": "monto_desalineado",
+           "pagina_repetida": "pagina_repetida"}
+PLANTILLA = "rotulo|glosa_desactualizada|titulo_otro_estado|glosa_otra_cuenta|monto_desalineado|pagina_repetida"
 
 
 def tipo_plantilla(forma):
     f = str(forma)
     return ("rotulo" if "rotulo" in f else "titulo" if "titulo_otro" in f else
-            "glosa_cuenta" if "glosa_otra" in f else "glosa")
+            "glosa_cuenta" if "glosa_otra" in f else "desalineado" if "desalineado" in f else
+            "repetida" if "repetida" in f else "glosa")
 
 
 # 03f: tipo -> (documento, clase). Revision: los 6 confirmados a mano (fechas del XML, encabezado del PDF).
@@ -329,31 +318,32 @@ def compensa_subtotal(s, subtotales, arch, v):
 
 
 def senales_rotulos():
-    """Rotulos que deja el lector en los renglones del 03b: titulo de otro estado (pagina) y glosa
-    de otra cuenta (renglon, solo los pares de PARES_GLOSA y si la glosa dice la palabra)."""
-    import re
-    from comun.lector import norm
+    """Presentacion por renglon: titulo de otro estado sobre la pagina (lector) y, desde el 03h, glosa de
+    otra cuenta, montos impresos una linea corridos y estado impreso dos veces."""
     ruta = P / "renglones_pdf.csv"
     if not ruta.exists():
         return pd.DataFrame(columns=COLS)
-    r = pd.read_csv(ruta, dtype={"rut": str, "rotulo": str, "glosa_de": str}, low_memory=False,
-                    usecols=["rut", "anio", "pagina", "estado", "glosa", "codigo", "rotulo", "glosa_de"])
+    r = pd.read_csv(ruta, dtype={"rut": str, "rotulo": str}, low_memory=False,
+                    usecols=["rut", "anio", "pagina", "estado", "rotulo"])
     ti = r[r["rotulo"].notna()].drop_duplicates(["rut", "anio", "pagina"])
     out = [pd.DataFrame({"fuente": "lector", "rut": ti["rut"], "anio_doc": ti["anio"], "documento": "PDF",
                          "columna": "actual", "estado": ti["estado"], "linea": "titulo:" + ti["rotulo"],
                          "nivel": "linea", "dif": 0.0, "clase": "presentacion", "forma": "titulo_otro_estado",
                          "detalle": "titulo " + ti["rotulo"] + " sobre el " + ti["estado"], "pagina": ti["pagina"]})]
-    g = r[r["glosa_de"].notna()]
-    ok = [bool((rx := PARES_GLOSA.get((c, d))) and re.search(rx, norm(str(gl))))
-          for c, d, gl in zip(g["codigo"], g["glosa_de"], g["glosa"])]
-    g = g[ok]
-    out.append(pd.DataFrame({"fuente": "lector", "rut": g["rut"], "anio_doc": g["anio"], "documento": "PDF",
-                             "columna": "actual", "estado": g["estado"], "linea": g["codigo"], "nivel": "linea",
-                             "dif": 0.0, "clase": "presentacion", "forma": "glosa_otra_cuenta",
-                             "detalle": "glosa de " + g["glosa_de"] + ": " + g["glosa"].astype(str).str[:80],
-                             "pagina": g["pagina"]}))
-    print(f"lector: titulo de otro estado en {len(ti)} paginas; glosa de otra cuenta en {len(g)} renglones "
-          f"(de {int(r['glosa_de'].notna().sum())} marcados por el emparejador)")
+    rf = P / "formato.csv"
+    n = 0
+    if rf.exists():
+        f = pd.read_csv(rf, dtype={"rut": str, "codigo": str})
+        f = f[f["tipo"].isin(FORMATO) & ~f["ocr"].fillna(False).astype(bool)]
+        n = len(f)
+        out.append(pd.DataFrame({"fuente": "03h", "rut": f["rut"], "anio_doc": f["anio"], "documento": "PDF",
+                                 "columna": "actual", "estado": f["estado"], "linea": f["codigo"].fillna("pagina"),
+                                 "nivel": "linea", "dif": 0.0, "clase": "presentacion",
+                                 "forma": f["tipo"].map(FORMATO), "detalle": f["detalle"], "pagina": f["pagina"]}))
+    else:
+        print("(sin formato.csv: correr el 03h)")
+    print(f"lector: titulo de otro estado en {len(ti)} paginas; 03h: {n} renglones de presentacion "
+          f"(glosa de otra cuenta, montos corridos, estado repetido)")
     return pd.concat(out, ignore_index=True)
 
 
@@ -561,7 +551,7 @@ def agrupar(t):
     casos = t[t["caso_id"].notna()]
     idx = {}
     for r in casos.itertuples():
-        if str(r.forma).startswith(("titulo_otro", "glosa_otra")):
+        if str(r.forma).startswith(("titulo_otro", "glosa_otra", "monto_desalineado", "pagina_repetida")):
             continue        # dif 0: no es una celda con monto a la que pegar senales
         idx.setdefault((r.rut, r.anio_doc, r.columna), []).append((r.adif, r.caso_id))
     def pegar():
@@ -617,6 +607,7 @@ def tipificar(t):
             f = str(raiz["forma"])
             tipo = ("desglose" if "desglose" in f else "rotulo" if "rotulo" in f else
                     "titulo_otro_estado" if "titulo_otro" in f else "glosa_otra_cuenta" if "glosa_otra" in f else
+                    "monto_desalineado" if "desalineado" in f else "pagina_repetida" if "repetida" in f else
                     "glosa" if "glosa" in f else
                     "agregacion_xml" if "agregacion" in f else
                     "reexpresion" if "reexpresion" in f else "criterio" if "criterio" in f else "reclasificacion")

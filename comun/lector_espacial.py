@@ -72,6 +72,23 @@ def _valor_espacial(t):
     return (-1 if neg else 1) * int(dig), irregular
 
 
+def tipo_formato(t):
+    """Forma impresa de un monto fuera de la convencion del modelo CMF (miles con punto, negativo entre
+    parentesis, sin decimales): "parentesis" (sin par o duplicados: "59.820.025)", "((31.340)"),
+    "miles" (agrupacion irregular: "26.767.9609"), "decimal" ("86.451,00"), o None."""
+    if RE_FECHA_NUM.match(t.strip("()")) or RE_GUION.match(t):
+        return None
+    if t.count("(") != t.count(")") or t.count("(") > 1:
+        return "parentesis"
+    nucleo = t.strip("()-−–— ")
+    if re.search(r",\d{2}$", nucleo):
+        return "decimal"
+    grupos = nucleo.split(".")
+    if len(grupos) > 1 and all(grupos) and any(len(g) > 3 for g in grupos[1:]) and not any(len(g) < 3 for g in grupos[1:]):
+        return "miles"
+    return None
+
+
 def _unir_tocandose(nums):
     """Une trozos de monto pegados en la misma linea ('1'+'5.772.597', '('+'63.180)').
     Un guion a menos de 6 pt antes de un monto es su signo ("- 89.243.084"); un
@@ -243,7 +260,7 @@ def filas_espaciales(pagina):
             col = "nota"
         else:
             continue                          # pie de pagina, numeros de la glosa, etc.
-        if irr:
+        if irr or tipo_formato(w[0]):
             irregulares.append(w[0])
         piezas.append({"y": w[3], "col": col, "v": v})
 

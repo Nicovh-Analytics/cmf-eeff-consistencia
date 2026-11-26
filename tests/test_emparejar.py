@@ -154,3 +154,54 @@ def test_total_activo_neto_no_es_total_activo():
                     R("Total activo neto atribuible a los participes", 386878.0, 1500.0)],
                    {}, "ESF", vocabulario=voc["ESF"], canon=canon, orden=_orden()["ESF"])
     assert rs[2]["codigo"] == "TotalActivo" and rs[5]["codigo"] == "ActivoNetoAtribuibleALosParticipes"
+
+
+def test_pagina_repetida_no_toma_cuentas():
+    # 10063 2025: el EFE impreso dos veces (paginas 10 y 11); la segunda no toma cuentas del indirecto
+    filas = [("Compra de activos financieros", -138815088.0, -73929674.0),
+             ("Intereses, diferencias de cambio y reajustes recibidos", 1629.0, 0.0),
+             ("Flujo neto originado por actividades de la operacion", -20024520.0, -29108937.0),
+             ("Diferencias de cambio netas sobre efectivo y efectivo equivalente", -2671840.0, 9862274.0),
+             ("Saldo final de efectivo y efectivo equivalente", 103041.0, 919070.0)]
+    rs = efe([R(g, a, b, 10) for g, a, b in filas] + [R(g, a, b + 2, 11) for g, a, b in filas], {})
+    assert all(r["codigo"] for r in rs[:5]) and not any(r["codigo"] for r in rs[5:])
+    assert [r["pagina_repetida"] for r in (rs[0], rs[5])] == [False, True]
+
+
+def test_titulo_con_montos_no_toma_una_linea():
+    # 10329 2023: "Ingresos/(perdidas) de la operacion:" con el monto de los intereses: no se le da otra linea
+    voc, canon = _catalogo()
+    rs = emparejar([R("Ingresos/(perdidas) de la operacion:", 45211.0, 0.0),
+                    R("Cambios netos en valor razonable de activos y pasivos financieros a valor razonable con "
+                      "efecto en resultados", 12036.0, 24626.0),
+                    R("Total ingresos/(perdidas) netos de la operacion", 96476.0, 24626.0)],
+                   {}, "ERI", vocabulario=voc["ERI"], canon=canon, orden=_orden()["ERI"])
+    assert rs[0]["codigo"] is None
+
+
+def test_monto_de_prefiere_la_cuenta_vecina():
+    # 10383 2023: la glosa del "antes de distribucion" (3 lineas, sin montos) y sus montos en la linea de abajo
+    rs = efe([R("Utilidad (perdida) de la operacion despues de impuesto", 44286.0, 461.0),
+              R("Aumento (disminucion) de activo neto atribuible a participes originadas por actividades de la "
+                "operacion antes de distribucion de beneficios", None, None),
+              R("Distribucion de beneficios", 44286.0, 461.0)],
+             {"UtilidadPerdidaDeLaOperacionDespuesDeImpuesto": (44286, 461), ANT: (44286, 461),
+              "DistribucionDeBeneficios": (0, 0)}, "ERI")
+    assert (rs[2]["codigo"], rs[2]["monto_de"], rs[2]["monto_de_vecino"]) == ("DistribucionDeBeneficios", ANT, True)
+
+
+def test_otros_a_secas_no_toma_otros_gastos():
+    rs = efe([R("Otros gastos de operacion percibidos", -341.0, 0.0)], {})
+    assert rs[0]["codigo"] == "OtrosGastosDeOperacionPagados"
+
+
+
+def test_monto_de_vecino_con_glosa_en_tres_lineas():
+    rs = efe([R("Utilidad (perdida) de la operacion despues de impuesto", 44286.0, 461.0),
+              R("Aumento/(disminucion) de activo neto atribuible a", None, None),
+              R("participes originadas por actividades de la operacion", None, None),
+              R("antes de distribucion de beneficios", None, None),
+              R("Distribucion de beneficios", 44286.0, 461.0)],
+             {"UtilidadPerdidaDeLaOperacionDespuesDeImpuesto": (44286, 461), ANT: (44286, 461),
+              "DistribucionDeBeneficios": (0, 0)}, "ERI")
+    assert (rs[4]["monto_de"], rs[4]["monto_de_vecino"]) == (ANT, True)
