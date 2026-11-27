@@ -56,16 +56,22 @@ NIVEL = {"documento": -1, "linea": 0, "subtotal": 1, "total": 2, "identidad": 3}
 # (formato.csv). Hasta v1 la glosa de otra cuenta se filtraba con una lista de pares revisados (PARES_GLOSA,
 # muestra 2026-11-12); el 03h la reemplaza con una regla general: la glosa es casi la oficial de la otra cuenta
 # y dice la palabra que la distingue de la propia ("antes"/"despues", "financiamiento"/"operacion").
-FORMATO = {"rotulo_otra_cuenta": "glosa_otra_cuenta", "monto_desalineado": "monto_desalineado",
+# Monto en otra linea (monto_desalineado, completo o en una columna): error del PDF de UBICACION, no
+# presentacion (revision 2026-11-26): la cifra esta bien y los totales cuadran, pero dos lineas del estado
+# informan un monto que no es el suyo (10383: el "antes de distribucion" en la linea de distribucion; un ERI
+# 2022 con la utilidad antes de impuestos en "Impuestos"). Un caso por celda con su monto; subtipo
+# "ubicacion" en casos_unicos para separarlo de las cifras mal calculadas.
+FORMATO = {"rotulo_otra_cuenta": "glosa_otra_cuenta", "monto_desalineado": "ubicacion/monto_desalineado",
+           "monto_desalineado_columna": "ubicacion/monto_desalineado_columna", "monto_sin_glosa": "monto_sin_glosa",
            "pagina_repetida": "pagina_repetida", "glosa_contradictoria": "inconsistencia_presentacion"}
-PLANTILLA = ("rotulo|glosa_desactualizada|titulo_otro_estado|glosa_otra_cuenta|monto_desalineado|pagina_repetida|"
+PLANTILLA = ("rotulo|glosa_desactualizada|titulo_otro_estado|glosa_otra_cuenta|pagina_repetida|monto_sin_glosa|"
              "cruce/pdf|cruce/persistente|inconsistencia")
 
 
 def tipo_plantilla(forma):
     f = str(forma)
     return ("inconsistencia" if "inconsistencia" in f else "rotulo" if "rotulo" in f else "titulo" if "titulo_otro" in f else
-            "glosa_cuenta" if "glosa_otra" in f else "desalineado" if "desalineado" in f else
+            "glosa_cuenta" if "glosa_otra" in f else "sin_glosa" if "sin_glosa" in f else
             "repetida" if "repetida" in f else "cruce_pdf" if "cruce/pdf" in f else
             "cruce_persistente" if "cruce/persistente" in f else "glosa")
 
@@ -346,10 +352,15 @@ def senales_rotulos():
         # no un caso de cada fondo-anio que la copia; solo la redaccion propia de la AGF es caso
         f = f[~((f["tipo"] == "glosa_contradictoria") & f["detalle"].astype(str).str.startswith("glosa del modelo"))]
         n = len(f)
+        forma = f["tipo"].map(FORMATO)
+        ubic = forma.str.startswith("ubicacion")
+        monto = pd.to_numeric(f["monto"], errors="coerce") if "monto" in f else pd.Series(float("nan"), index=f.index)
+        col = f["columna"].where(f["columna"].isin(["actual", "anterior"]), "actual") if "columna" in f else "actual"
         out.append(pd.DataFrame({"fuente": "03h", "rut": f["rut"], "anio_doc": f["anio"], "documento": "PDF",
-                                 "columna": "actual", "estado": f["estado"], "linea": f["codigo"].fillna("pagina"),
-                                 "nivel": "linea", "dif": 0.0, "clase": "presentacion",
-                                 "forma": f["tipo"].map(FORMATO), "detalle": f["detalle"], "pagina": f["pagina"]}))
+                                 "columna": col, "estado": f["estado"], "linea": f["codigo"].fillna("pagina"),
+                                 "nivel": "linea", "dif": monto.where(ubic, 0.0).fillna(0.0),
+                                 "clase": pd.Series("presentacion", index=f.index).where(~ubic, "error"),
+                                 "forma": forma, "detalle": f["detalle"], "pagina": f["pagina"]}))
     else:
         print("(sin formato.csv: correr el 03h)")
     print(f"lector: titulo de otro estado en {len(ti)} paginas; 03h: {n} renglones de presentacion "
@@ -660,7 +671,7 @@ def agrupar(t):
     casos = t[t["caso_id"].notna()]
     idx = {}
     for r in casos.itertuples():
-        if str(r.forma).startswith(("titulo_otro", "glosa_otra", "monto_desalineado", "pagina_repetida",
+        if str(r.forma).startswith(("titulo_otro", "glosa_otra", "monto_sin_glosa", "pagina_repetida",
                                     "inconsistencia")):
             continue        # dif 0: no es una celda con monto a la que pegar senales
         idx.setdefault((r.rut, r.anio_doc, r.columna), []).append((r.adif, r.caso_id))
@@ -717,7 +728,7 @@ def tipificar(t):
             f = str(raiz["forma"])
             tipo = ("desglose" if "desglose" in f else "rotulo" if "rotulo" in f else
                     "titulo_otro_estado" if "titulo_otro" in f else "glosa_otra_cuenta" if "glosa_otra" in f else
-                    "monto_desalineado" if "desalineado" in f else "pagina_repetida" if "repetida" in f else
+                    "monto_sin_glosa" if "sin_glosa" in f else "pagina_repetida" if "repetida" in f else
                     "difiere_envio_diario" if "eeff_vs_cmf" in f else
                     "inconsistencia_presentacion" if "inconsistencia" in f else
                     "cruce_pdf" if "cruce/pdf" in f else "cruce_persistente" if "cruce/persistente" in f else
@@ -744,8 +755,10 @@ def tipificar(t):
             # Solo dice que PDF y XML difieren en una linea, sin ancla ni otra etapa que diga cual:
             # en la muestra de precision 0 de 6 eran errores (lectura o presentacion distinta).
             tipo = "diferencia_pdf_xml"
+        subtipo = ("ubicacion" if tipo.startswith("error") and len(e)
+                   and e["forma"].astype(str).str.startswith("ubicacion").all() else "")
         out.append(dict(caso_id=cid, rut=raiz["rut"], anio_doc=raiz["anio_doc"], columna=raiz["columna"],
-                        tipo=tipo, estado_raiz=raiz["estado"], linea_raiz=raiz["linea"], nivel=raiz["nivel"],
+                        tipo=tipo, subtipo=subtipo, estado_raiz=raiz["estado"], linea_raiz=raiz["linea"], nivel=raiz["nivel"],
                         dif=g["adif"].max(), fuentes=",".join(sorted(set(g["fuente"]))),
                         n_senales=len(g), estados=",".join(sorted(set(g["estado"].dropna()))),
                         lineas=",".join(sorted(set(g["linea"])))[:200], evidencia=evid,

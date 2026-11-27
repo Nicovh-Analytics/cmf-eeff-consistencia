@@ -189,7 +189,13 @@ def main():
     r = pd.read_csv(P / "renglones_pdf.csv", dtype={"rut": str, "codigo": str}, low_memory=False,
                     usecols=lambda c: c in {"rut", "anio", "estado", "codigo", "monto_de_vecino"})
     corr = r[r.get("monto_de_vecino", pd.Series(False, index=r.index)).fillna(False).astype(bool)]
-    corridos = frozenset(zip(corr["rut"], corr["anio"], corr["estado"], corr["codigo"]))
+    corridos = set(zip(corr["rut"], corr["anio"], corr["estado"], corr["codigo"]))
+    if (P / "formato.csv").exists():        # el monto desalineado en una columna (03h) tampoco es cruce
+        f = pd.read_csv(P / "formato.csv", dtype={"rut": str, "codigo": str}, usecols=["rut", "anio", "estado",
+                                                                                         "codigo", "tipo"])
+        f = f[f["tipo"] == "monto_desalineado_columna"]
+        corridos |= set(zip(f["rut"], f["anio"], f["estado"], f["codigo"]))
+    corridos = frozenset(corridos)
     m = cruzados(p, x, vx, corridos, _totales())
     c = por_glosa(votar(m, x, vx, vp))
     c.to_csv(P / "cruces.csv", index=False, encoding="utf-8-sig")

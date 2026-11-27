@@ -60,6 +60,11 @@ def main():
     err = cu[cu["tipo"].astype(str).str.startswith("error")]
     fa_err = err[["rut", "anio_doc"]].drop_duplicates()
     out("errores (casos unicos)", len(err), " | ".join(f"{t} {n}" for t, n in err["tipo"].value_counts().items()))
+    if "subtipo" in err:
+        ub = err[err["subtipo"].astype(str) == "ubicacion"]
+        out("de ellos, monto en otra linea", len(ub),
+            "error de ubicacion: la cifra esta bien y los totales cuadran, pero la linea informa un monto que no es "
+            "el suyo (" + " | ".join(f"{t} {n}" for t, n in ub["tipo"].value_counts().items()) + ")")
     if (P / "origen.csv").exists():
         o = pd.read_csv(P / "origen.csv", dtype={"rut": str})
         out("errores de origen", len(o), f"afectan {int(o['casos'].sum())} casos; {int((o['casos'] > 1).sum())} "

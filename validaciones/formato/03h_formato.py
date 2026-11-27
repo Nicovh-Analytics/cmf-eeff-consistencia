@@ -18,6 +18,19 @@ Hallazgos por renglon (formato.csv):
                       (la glosa casi igual a la oficial de esa otra cuenta, parecido >= 0,85)
   redaccion_ambigua   igual, pero la glosa solo se parece a la otra cuenta: redaccion propia de la AGF
   monto_desalineado   los montos de la cuenta del renglon de al lado, impresos una linea corridos
+  monto_desalineado_columna  lo mismo en UNA columna: la celda de la cuenta vacia en esa columna y su
+                      monto (el del XML) impreso en el renglon vecino, que no es el de ese renglon (2022:
+                      utilidad antes de impuestos en blanco y su monto en "Impuestos"). Un guion (0) cuenta
+                      como celda vacia SOLO entre una linea y un subtotal/total: entre dos lineas, con una en
+                      guion, un monto corrido y dos cuentas cruzadas se ven igual, y eso lo decide el 03j con
+                      sus testigos (el guion entre dos lineas convirtio en "PDF" 300 cruces que el 03j daba al
+                      XML, entre ellos 8676 2012 y 8460 2019, confirmados del XML). Tambien en el ECP (total del
+                      fondo, filas vecinas del 03d): 9061 2015, el resultado antes de distribucion (subtotal)
+                      con guion y su monto en "Distribucion de beneficios" (linea)
+                      -> el 04c cuenta los dos desalineados como error del PDF de UBICACION: la cifra esta
+                      bien, pero dos lineas del estado informan un monto que no es el suyo
+  monto_sin_glosa     un renglon con montos y sin texto dentro del estado, despues de un renglon con montos
+                      (no la continuacion de una glosa partida): el total lo suma y no se sabe de que cuenta es
   intercambio         dos renglones con los montos del otro (glosas o montos cruzados entre si)
   monto_cruzado       la glosa dice una cuenta y TODOS sus montos son los de otra cuenta del XML: o el
                       PDF puso los montos en otra fila o el XML los cruzo (lo resuelve el error de origen)
@@ -40,6 +53,7 @@ Lee:      renglones_pdf.csv (03b), ecp_bloques.csv (03d), encabezados.csv, catal
 Escribe:  formato.csv, formato_fondo.csv, formato_agf.csv, formato_modelo.csv (glosas contradictorias del
           propio modelo CMF: cuantos fondo-anio y AGF que imprimen la cuenta copian esa glosa)
 """
+import importlib
 import re
 import sys
 from difflib import SequenceMatcher
@@ -51,10 +65,10 @@ from comun.emparejar import _tokens
 from config import CMF_HOME, nombres_agf
 
 P = CMF_HOME / "procesado"
-COLS = ["rut", "anio", "estado", "pagina", "codigo", "columna", "tipo", "detalle", "ocr"]
+COLS = ["rut", "anio", "estado", "pagina", "codigo", "columna", "tipo", "detalle", "ocr", "monto"]
 ROTULO = 0.85      # parecido de la glosa con la oficial de la otra cuenta para llamarlo rotulo
 TIPOS = ["parentesis", "miles", "decimal", "signo_modelo", "signo_mixto", "rotulo_otra_cuenta", "redaccion_ambigua",
-         "monto_desalineado", "intercambio", "monto_cruzado",
+         "monto_desalineado", "monto_desalineado_columna", "monto_sin_glosa", "intercambio", "monto_cruzado",
          "titulo_otro_estado", "pagina_repetida", "glosa_desactualizada", "glosa_contradictoria"]
 # direccion del flujo en la glosa: sustantivo y participio. Sin direccion propia: dividendos e intereses
 # (cobros o pagos) y "pagos" ("pagos de capital (cupones) ... recibidos": el pago lo hace el emisor)
@@ -88,6 +102,18 @@ def contradictoria(gl):
 def parecido(a, b):
     ta, tb = " ".join(_tokens(a)), " ".join(_tokens(b))
     return SequenceMatcher(None, ta, tb).ratio() if ta and tb else 0.0
+
+
+def valores_xml():
+    """{(rut, anio, estado, concepto, columna): cifra} del XML (totales del fondo), por concepto del catalogo."""
+    from comun.emparejar import _catalogo
+    from motor import hechos
+    _, canon = _catalogo()
+    x = hechos.xml()
+    x = x[x["serie"] == ""]
+    col = x["contexto"].map({"PeriodoActual": "actual", "PeriodoAnterior": "anterior"})
+    can = x["codigo"].map(lambda c: canon.get(c, c))
+    return dict(zip(zip(x["rut"], x["anio"], x["estado"], can, col), x["valor"]))
 
 
 def leer():
@@ -129,10 +155,111 @@ def distingue(gl, propia, otra, glosa, sinon):
     return bool(tg & (to - tp)) and not (tg & (tp - to))
 
 
-def hallazgos(r, signo, ecp=None, glosa=None, sinon=None):
-    """ecp: ecp_bloques.csv del 03d (glosa desactualizada); None = sin el ECP. glosa/sinon (oficial()):
-    para separar el rotulo de otra cuenta de una redaccion ambigua; None = todo glosa_de es rotulo."""
+def sin_glosa(r):
+    """Renglones con montos y sin letras en la glosa, en una pagina con cuentas, cuyo renglon anterior
+    tiene montos (si no, es la linea de los montos de una glosa partida: "... 05-07-" / "30 110.955.999")."""
     out = []
+    tiene = lambda x: pd.notna(x.actual) or pd.notna(x.anterior)
+    for _, g in r.groupby(["rut", "anio", "estado", "pagina"], sort=False):
+        if g["codigo"].isna().all():
+            continue
+        prev = None
+        for x in g.itertuples():
+            grande = max(abs(v) for v in (x.actual, x.anterior) if pd.notna(v)) > 10 if tiene(x) else False
+            if (grande and not re.search(r"[A-Za-z]", str(x.glosa) if pd.notna(x.glosa) else "")
+                    and prev is not None and tiene(prev)):
+                out.append(x.Index)
+            prev = x
+    return r.loc[out]
+
+
+def guion_vale(vb, a_total, b_total):
+    """La celda de b cuenta como vacia: en blanco, o con guion (0) si una de las dos es un total y la otra no."""
+    return vb is None or (vb == 0 and a_total != b_total)
+
+
+def desalineado_columna(r, vx, totales=frozenset()):
+    """Por pares de renglones con cuenta seguidos (en el orden de lectura de la pagina) y por columna: la
+    celda de b vacia, el monto de a es el de b en el XML y no el de a. vx: {(rut, anio, estado, concepto,
+    columna): cifra} del XML."""
+    filas = []
+    c = r[r["codigo"].notna()]
+    num = lambda v: None if v is None or pd.isna(v) else float(v)
+    cerca = lambda u, v: u is not None and v is not None and abs(abs(u) - abs(v)) <= 2
+    for (rut, anio, est, _), g in c.groupby(["rut", "anio", "estado", "pagina"], sort=False):
+        xs = list(g.itertuples())
+        for i, a in enumerate(xs):
+            for j in (i - 1, i + 1):
+                if not 0 <= j < len(xs):
+                    continue
+                b = xs[j]
+                if b.codigo == a.codigo:
+                    continue
+                for col in ("actual", "anterior"):
+                    v, vb = num(getattr(a, col)), num(getattr(b, col))
+                    if v is None or abs(v) <= 10 or not guion_vale(vb, a.codigo in totales, b.codigo in totales):
+                        continue
+                    xa, xb = vx.get((rut, anio, est, a.codigo, col)), vx.get((rut, anio, est, b.codigo, col))
+                    if cerca(v, xb) and xa is not None and not cerca(v, xa):
+                        filas.append(dict(rut=rut, anio=anio, estado=est, pagina=a.pagina, codigo=a.codigo,
+                                          columna=col, tipo="monto_desalineado_columna", ocr=a.ocr, monto=v,
+                                          detalle=f"impreso en {a.codigo}: {v:,.0f} es el de {b.codigo} "
+                                                  f"(en blanco en su renglon); XML de {a.codigo}: {xa:,.0f}"))
+    return pd.DataFrame(filas, columns=COLS)
+
+
+# filas del ECP en el orden del modelo (03d) y su codigo del total del fondo
+FILAS_ECP = ["inicio", "aportes", "rescates", "neto", "res_antes", "dist", "res_despues", "cierre"]
+TOTALES_ECP = {"inicio", "neto", "res_antes", "res_despues", "cierre"}
+
+
+def desalineado_ecp(e, vx):
+    """monto_desalineado_columna en el ECP (celdas del total del fondo del 03d, hechos.ecp()): la fila b en
+    blanco o con guion, su monto del XML impreso en la fila vecina a, que no es el de a en el XML."""
+    cod = importlib.import_module("validaciones.estructura.03d_ecp").CODIGO_FILA
+    t = e[e["es_total"].astype(str).isin(["True", "true", "1"]) & e["fila"].isin(FILAS_ECP)]
+    filas = []
+    cerca = lambda u, v: u is not None and v is not None and abs(abs(u) - abs(v)) <= 2
+    for (rut, anio, ctx), g in t.groupby(["rut", "anio", "contexto"]):
+        col = "actual" if ctx == "PeriodoActual" else "anterior"
+        g = g.drop_duplicates("fila")
+        val = dict(zip(g["fila"], g["valor"]))
+        pag = dict(zip(g["fila"], g["pagina"]))
+        ocr = dict(zip(g["fila"], g["ocr"]))
+        for i, a in enumerate(FILAS_ECP):
+            v = val.get(a)
+            if v is None or pd.isna(v) or abs(v) <= 10:
+                continue
+            xa = vx.get((rut, anio, "ECP", cod[a], col))
+            for j in (i - 1, i + 1):
+                if not 0 <= j < len(FILAS_ECP):
+                    continue
+                b = FILAS_ECP[j]
+                vb = val.get(b)
+                vb = None if vb is None or pd.isna(vb) else vb
+                if b not in val or not guion_vale(vb, a in TOTALES_ECP, b in TOTALES_ECP):
+                    continue
+                xb = vx.get((rut, anio, "ECP", cod[b], col))
+                if cerca(v, xb) and xa is not None and not cerca(v, xa):
+                    filas.append(dict(rut=rut, anio=anio, estado="ECP", pagina=pag[a], codigo=cod[a], columna=col,
+                                      tipo="monto_desalineado_columna", ocr=bool(ocr[a]), monto=v,
+                                      detalle=f"ECP total: {v:,.0f} impreso en {a} es el de {b} (en blanco o guion); "
+                                              f"XML de {a}: {xa:,.0f}"))
+    return pd.DataFrame(filas, columns=COLS)
+
+
+def hallazgos(r, signo, ecp=None, glosa=None, sinon=None, vx=None, ecp_celdas=None):
+    """ecp: ecp_bloques.csv del 03d (glosa desactualizada); None = sin el ECP. glosa/sinon (oficial()):
+    para separar el rotulo de otra cuenta de una redaccion ambigua; None = todo glosa_de es rotulo.
+    vx: cifras del XML por concepto y columna (monto_desalineado_columna); None = no se busca."""
+    out = []
+    sg = sin_glosa(r)
+    d = sg[["rut", "anio", "estado", "pagina", "codigo", "ocr"]].copy()
+    d["columna"], d["tipo"] = "", "monto_sin_glosa"
+    d["monto"] = sg["actual"].where(sg["actual"].notna(), sg["anterior"])
+    d["detalle"] = ["sin glosa: " + ", ".join(f"{v:,.0f}" for v in (a, b) if pd.notna(v))
+                    for a, b in zip(sg["actual"], sg["anterior"])]
+    out.append(d)
     base = lambda d: d[["rut", "anio", "estado", "pagina", "codigo", "ocr"]].copy()
     rp = r[r.get("pagina_repetida", pd.Series(False, index=r.index)).fillna(False).astype(bool)]
     rp = rp.drop_duplicates(["rut", "anio", "pagina"])
@@ -203,6 +330,7 @@ def hallazgos(r, signo, ecp=None, glosa=None, sinon=None):
     d = base(m)
     d["columna"] = ""
     d["tipo"] = ["monto_desalineado" if v else "intercambio" if i else "monto_cruzado" for v, i in zip(vecino, inter)]
+    d["monto"] = m["actual"].where(m["actual"].notna(), m["anterior"])
     d["detalle"] = "glosa " + m["codigo"].astype(str) + ", montos de " + m["monto_de"].astype(str)
     out.append(d)
 
@@ -224,6 +352,12 @@ def hallazgos(r, signo, ecp=None, glosa=None, sinon=None):
         d["detalle"] = [("glosa del modelo CMF: " if del_modelo(g, c) else "redaccion de la AGF: ") + g[:80]
                         for g, c in zip(gc["glosa"].astype(str), gc["codigo"].astype(str))]
         out.append(d)
+
+    if vx is not None:
+        from comun.emparejar import _totales
+        out.append(desalineado_columna(r, vx, _totales()))
+        if ecp_celdas is not None:
+            out.append(desalineado_ecp(ecp_celdas, vx))
 
     t = r[r["rotulo"].notna()].drop_duplicates(["rut", "anio", "pagina"])
     d = base(t)
@@ -275,7 +409,9 @@ def main():
     glosa, signo, sinon = oficial()
     r = leer()
     ruta = P / "ecp_bloques.csv"
-    h = hallazgos(r, signo, pd.read_csv(ruta, dtype={"rut": str}) if ruta.exists() else None, glosa, sinon)
+    from motor import hechos
+    h = hallazgos(r, signo, pd.read_csv(ruta, dtype={"rut": str}) if ruta.exists() else None, glosa, sinon,
+                  valores_xml(), hechos.ecp() if (P / "ecp_celdas.csv").exists() else None)
     h.to_csv(P / "formato.csv", index=False, encoding="utf-8-sig")
 
     enc = pd.read_csv(P / "encabezados.csv", dtype={"rut": str, "rut_agf": str})
