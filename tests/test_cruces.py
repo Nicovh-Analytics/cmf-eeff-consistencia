@@ -57,3 +57,14 @@ def test_04c_senales_cruces(tmp_path, monkeypatch):
     s = c04.senales_cruces()
     assert s["clase"].tolist() == ["error", "inmaterial", "presentacion", "revisar"]
     assert s["documento"].tolist() == ["XML", "XML", "PDF", "PDF/XML"]
+
+
+def test_por_glosa(tmp_path):
+    # 8160 2017: la glosa contradictoria esta en el PDF del anio vecino (testigo de la columna actual)
+    c = pd.DataFrame([dict(rut="X", anio=2017, estado="EFE", columna="actual", codigo="OtrosIngresosDeOperacion",
+                           monto_de="MontosRecibidosDeSociedadAdministradoraEIntermediarios", lado="XML"),
+                      dict(rut="X", anio=2015, estado="EFE", columna="actual", codigo="OtrosIngresosDeOperacion",
+                           monto_de="MontosRecibidosDeSociedadAdministradoraEIntermediarios", lado="XML")])
+    pd.DataFrame([dict(rut="X", anio=2018, estado="EFE", codigo="OtrosIngresosDeOperacion", tipo="glosa_contradictoria")]
+                 ).to_csv(tmp_path / "formato.csv", index=False)
+    assert m.por_glosa(c, tmp_path / "formato.csv")["lado"].tolist() == ["glosa_contradictoria", "XML"]

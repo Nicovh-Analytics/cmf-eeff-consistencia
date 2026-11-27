@@ -25,7 +25,9 @@ lado por celda (fondo, anio, estado, columna): XML (solo votos del XML), PDF (so
 contradictorio; persistente si cada documento es igual a si mismo en el anio vecino (el XML de t+1 como
 el de t, el PDF de t+1 como el de t): la glosa del PDF y la cuenta del XML difieren de forma estable, es
 presentacion (9921: un ingreso impreso bajo "pagados", confirmado; 8338: otros ingresos y gastos) o el
-glosario; el resto, sin_testigo. Primero se MIDE; luego el 04c: XML -> error del XML (cuenta cruzada),
+glosario; glosa_contradictoria si la glosa de la cuenta, en t o en el anio vecino que sirve de testigo, dice
+cobro y pago a la vez (03h: "Otros ingresos de operacion pagados", la del modelo CMF): el cruce es efecto
+de la glosa, no se puede decir que documento la cruzo (8160 2017); el resto, sin_testigo. Primero se MIDE; luego el 04c: XML -> error del XML (cuenta cruzada),
 PDF y persistente -> presentacion (la glosa del PDF dice otra cuenta), el resto revisar.
 
 Uso:
@@ -162,6 +164,21 @@ def votar(m, x, vx, vp):
     return c[COLS]
 
 
+def por_glosa(c, ruta=P / "formato.csv"):
+    """lado glosa_contradictoria: la cuenta a o b con glosa contradictoria (03h) en t o en el anio vecino."""
+    if c.empty or not ruta.exists():
+        return c
+    f = pd.read_csv(ruta, dtype={"rut": str, "codigo": str}, usecols=["rut", "anio", "estado", "codigo", "tipo"])
+    g = set(map(tuple, f[f["tipo"] == "glosa_contradictoria"][["rut", "anio", "estado", "codigo"]].values))
+    d = c["columna"].map(lambda x: VECINO[x][0])
+    hit = [any(k in g for k in ((r, y, e, a), (r, y + dd, e, a), (r, y, e, b)))
+           for r, y, e, a, b, dd in zip(c["rut"], c["anio"], c["estado"], c["codigo"], c["monto_de"], d)]
+    k = [c["rut"], c["anio"], c["estado"], c["columna"]]
+    hit = pd.Series(hit, index=c.index).groupby(k).transform("any")
+    c.loc[hit, "lado"] = "glosa_contradictoria"
+    return c
+
+
 def main():
     _, canon = _catalogo()
     x, vx = valores_xml(hechos.xml(), canon)
@@ -174,7 +191,7 @@ def main():
     corr = r[r.get("monto_de_vecino", pd.Series(False, index=r.index)).fillna(False).astype(bool)]
     corridos = frozenset(zip(corr["rut"], corr["anio"], corr["estado"], corr["codigo"]))
     m = cruzados(p, x, vx, corridos, _totales())
-    c = votar(m, x, vx, vp)
+    c = por_glosa(votar(m, x, vx, vp))
     c.to_csv(P / "cruces.csv", index=False, encoding="utf-8-sig")
 
     pd.set_option("display.width", 230)

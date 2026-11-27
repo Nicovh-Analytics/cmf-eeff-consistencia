@@ -24,6 +24,10 @@ Hallazgos por renglon (formato.csv):
   titulo_otro_estado  titulo de un estado impreso sobre otro                                  [lector]
   pagina_repetida     el mismo estado impreso dos veces (glosas y montos iguales)           [emparejador]
   glosa_desactualizada  el ECP fecha el bloque con otro anio que el que calza con el XML          [03d]
+  glosa_contradictoria  en el EFE, la glosa dice una direccion con el sustantivo y la contraria con el
+                      participio ("Otros ingresos de operacion pagados"): no deja ver si es cobro o pago
+                      (NIC 7.18(a) pide cobros y pagos brutos por separado). El detalle dice si es la glosa
+                      del modelo CMF (esa misma glosa esta en el modelo) o redaccion de la AGF
 
 Por fondo-anio (formato_fondo.csv): ademas, la ADHERENCIA de la redaccion al modelo: parecido medio
 (0-1) de cada glosa con la glosa oficial de su cuenta (la mejor entre sinonimos de las plantillas).
@@ -50,7 +54,10 @@ COLS = ["rut", "anio", "estado", "pagina", "codigo", "columna", "tipo", "detalle
 ROTULO = 0.85      # parecido de la glosa con la oficial de la otra cuenta para llamarlo rotulo
 TIPOS = ["parentesis", "miles", "decimal", "signo_modelo", "signo_mixto", "rotulo_otra_cuenta", "redaccion_ambigua",
          "monto_desalineado", "intercambio", "monto_cruzado",
-         "titulo_otro_estado", "pagina_repetida", "glosa_desactualizada"]
+         "titulo_otro_estado", "pagina_repetida", "glosa_desactualizada", "glosa_contradictoria"]
+# direccion del flujo en la glosa: sustantivo y participio (dividendos e intereses pueden ser cobros o pagos)
+ENTRA_N, SALE_N = r"ingreso|venta|cobro|aporte|colocacion", r"gasto|egreso|compra|rescate|pago"
+ENTRA_P, SALE_P = r"recibid|percibid|cobrad", r"pagad"
 
 
 def oficial():
@@ -65,6 +72,15 @@ def oficial():
     for c in glosa:
         sinon.setdefault(canon.get(c, c), []).append(c)
     return glosa, signo, sinon
+
+
+def contradictoria(gl):
+    """La glosa nombra una direccion y la contraria: sustantivo de entrada con participio de salida
+    ("ingresos ... pagados") o al reves. "Otros ingresos (egresos)" (neto, sin participio) no lo es."""
+    t = " ".join(_tokens(gl))
+    en, sn = re.search(ENTRA_N, t), re.search(SALE_N, t)
+    ep, sp = re.search(ENTRA_P, t), re.search(SALE_P, t)
+    return bool((sp and en and not sn) or (ep and sn and not en))
 
 
 def parecido(a, b):
@@ -187,6 +203,25 @@ def hallazgos(r, signo, ecp=None, glosa=None, sinon=None):
     d["tipo"] = ["monto_desalineado" if v else "intercambio" if i else "monto_cruzado" for v, i in zip(vecino, inter)]
     d["detalle"] = "glosa " + m["codigo"].astype(str) + ", montos de " + m["monto_de"].astype(str)
     out.append(d)
+
+    gc = r[r["codigo"].notna() & (r["estado"] == "EFE") & r["glosa"].notna()]
+    gc = gc[[contradictoria(g) for g in gc["glosa"].astype(str)]]
+    if len(gc):
+        cache = {}
+
+        def del_modelo(g, c):
+            if glosa is None:
+                return False
+            k = (g, c)
+            if k not in cache:
+                cache[k] = any(contradictoria(glosa[x]) and parecido(g, glosa[x]) >= ROTULO
+                               for x in sinon.get(c, [c]) if x in glosa)
+            return cache[k]
+        d = base(gc)
+        d["columna"], d["tipo"] = "", "glosa_contradictoria"
+        d["detalle"] = [("glosa del modelo CMF: " if del_modelo(g, c) else "redaccion de la AGF: ") + g[:80]
+                        for g, c in zip(gc["glosa"].astype(str), gc["codigo"].astype(str))]
+        out.append(d)
 
     t = r[r["rotulo"].notna()].drop_duplicates(["rut", "anio", "pagina"])
     d = base(t)

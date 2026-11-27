@@ -79,6 +79,12 @@ def main():
             out(f"precision {r.tipo}", r.precision, f"IC 95% {r.ic95}; {r.revisados} revisados")
     else:
         out("precision", "-", "sin precision.csv (verificacion/precision_combinada.py)")
+    # la muestra de precision es anterior al 03j: los errores que solo ve el 03j (cuenta cruzada en el XML)
+    # no estan en ella; se informan aparte hasta la muestra v2
+    solo03j = err[err["fuentes"].astype(str) == "03j"]
+    if len(solo03j):
+        out("errores fuera de la muestra de precision", len(solo03j),
+            "error_XML que solo ve el 03j (cuenta cruzada en el XML); muestra v2 pendiente")
 
     # AGF por grupos (sin nombres)
     pa = pd.read_csv(P / "perfil_agf.csv", dtype={"rut_agf": str})

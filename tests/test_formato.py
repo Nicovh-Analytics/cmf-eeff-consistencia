@@ -41,3 +41,17 @@ def test_rotulo_distingue():
     g = "Aumento (disminucion) de activo neto atribuible a participes originadas por actividades de la operacion"
     assert m.distingue(g + " antes de distribucion de beneficios", DES, ANT, glosa, sinon)
     assert not m.distingue(g, DES, ANT, glosa, sinon)                 # glosa que no dice antes ni despues
+
+
+def test_glosa_contradictoria():
+    glosa, signo, sinon = m.oficial()
+    assert m.contradictoria("Otros ingresos de operación pagados") and not m.contradictoria("Dividendos pagados")
+    assert not m.contradictoria("Otros ingresos (egresos) de operación")
+    fila = lambda g, c: dict(rut="X", anio=2018, estado="EFE", pagina=5, codigo=c, glosa=g, actual=59964.0,
+                             anterior=None, formato=None, glosa_de=None, monto_de=None, rotulo=None, ocr=False,
+                             metodo="espacial")
+    r = pd.DataFrame([fila("Otros ingresos de operación pagados", "OtrosIngresosDeOperacion"),
+                      fila("Otros gastos de operación pagados", "OtrosGastosDeOperacionPagados")])
+    h = m.hallazgos(r, signo, glosa=glosa, sinon=sinon)
+    g = h[h["tipo"] == "glosa_contradictoria"]
+    assert len(g) == 1 and g["detalle"].iloc[0].startswith("glosa del modelo CMF")

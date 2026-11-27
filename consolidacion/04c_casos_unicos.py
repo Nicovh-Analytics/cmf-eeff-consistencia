@@ -57,14 +57,14 @@ NIVEL = {"documento": -1, "linea": 0, "subtotal": 1, "total": 2, "identidad": 3}
 # muestra 2026-11-12); el 03h la reemplaza con una regla general: la glosa es casi la oficial de la otra cuenta
 # y dice la palabra que la distingue de la propia ("antes"/"despues", "financiamiento"/"operacion").
 FORMATO = {"rotulo_otra_cuenta": "glosa_otra_cuenta", "monto_desalineado": "monto_desalineado",
-           "pagina_repetida": "pagina_repetida"}
+           "pagina_repetida": "pagina_repetida", "glosa_contradictoria": "inconsistencia_presentacion"}
 PLANTILLA = ("rotulo|glosa_desactualizada|titulo_otro_estado|glosa_otra_cuenta|monto_desalineado|pagina_repetida|"
-             "cruce/pdf|cruce/persistente")
+             "cruce/pdf|cruce/persistente|inconsistencia")
 
 
 def tipo_plantilla(forma):
     f = str(forma)
-    return ("rotulo" if "rotulo" in f else "titulo" if "titulo_otro" in f else
+    return ("inconsistencia" if "inconsistencia" in f else "rotulo" if "rotulo" in f else "titulo" if "titulo_otro" in f else
             "glosa_cuenta" if "glosa_otra" in f else "desalineado" if "desalineado" in f else
             "repetida" if "repetida" in f else "cruce_pdf" if "cruce/pdf" in f else
             "cruce_persistente" if "cruce/persistente" in f else "glosa")
@@ -410,6 +410,9 @@ def senales_cruces():
       PDF          el PDF del anio vecino la pone donde el XML de t -> presentacion (cruce_pdf; o lectura nuestra)
       persistente  cada documento igual a si mismo en el anio vecino -> presentacion (cruce_persistente: la
                    glosa del PDF y la cuenta del XML difieren de forma estable; 9921 confirmado; o el glosario)
+      glosa_contradictoria  la glosa de la cuenta (en t o en el anio vecino que sirvio de testigo) dice
+                   cobro y pago a la vez (03h): el cruce es efecto de esa glosa -> inconsistencia de presentacion
+                   (8160 2017: "Otros ingresos de operacion pagados", la glosa del modelo CMF)
       el resto     revisar (se pega a un caso de la misma celda y |dif| si lo hay)"""
     ruta = P / "cruces.csv"
     if not ruta.exists():
@@ -424,9 +427,10 @@ def senales_cruces():
     clase = pd.Series("revisar", index=c.index)
     clase[xml] = "error"
     clase[xml & (c["dif"].abs() <= umbral)] = "inmaterial"
-    clase[c["lado"].isin(["PDF", "persistente"])] = "presentacion"
-    forma = "cruce/" + c["lado"].map({"XML": "xml", "PDF": "pdf", "persistente": "persistente"}).fillna("revisar")
-    doc = c["lado"].map({"XML": "XML", "PDF": "PDF", "persistente": "PDF"}).fillna("PDF/XML")
+    clase[c["lado"].isin(["PDF", "persistente", "glosa_contradictoria"])] = "presentacion"
+    forma = "cruce/" + c["lado"].map({"XML": "xml", "PDF": "pdf", "persistente": "persistente",
+                                      "glosa_contradictoria": "inconsistencia"}).fillna("revisar")
+    doc = c["lado"].map({"XML": "XML", "PDF": "PDF", "persistente": "PDF", "glosa_contradictoria": "PDF"}).fillna("PDF/XML")
     f = lambda v: "-" if pd.isna(v) else f"{v:,.0f}"
     print(f"03j: cruces por lado {c.drop_duplicates(['rut', 'anio', 'estado', 'columna'])['lado'].value_counts().to_dict()}"
           f"; del XML materiales {int((clase == 'error').sum())}, inmateriales {int((clase == 'inmaterial').sum())}")
@@ -653,7 +657,8 @@ def agrupar(t):
     casos = t[t["caso_id"].notna()]
     idx = {}
     for r in casos.itertuples():
-        if str(r.forma).startswith(("titulo_otro", "glosa_otra", "monto_desalineado", "pagina_repetida")):
+        if str(r.forma).startswith(("titulo_otro", "glosa_otra", "monto_desalineado", "pagina_repetida",
+                                    "inconsistencia")):
             continue        # dif 0: no es una celda con monto a la que pegar senales
         idx.setdefault((r.rut, r.anio_doc, r.columna), []).append((r.adif, r.caso_id))
     def pegar():
@@ -711,6 +716,7 @@ def tipificar(t):
                     "titulo_otro_estado" if "titulo_otro" in f else "glosa_otra_cuenta" if "glosa_otra" in f else
                     "monto_desalineado" if "desalineado" in f else "pagina_repetida" if "repetida" in f else
                     "difiere_envio_diario" if "eeff_vs_cmf" in f else
+                    "inconsistencia_presentacion" if "inconsistencia" in f else
                     "cruce_pdf" if "cruce/pdf" in f else "cruce_persistente" if "cruce/persistente" in f else
                     "glosa" if "glosa" in f else
                     "agregacion_xml" if "agregacion" in f else
