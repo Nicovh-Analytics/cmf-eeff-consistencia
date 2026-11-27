@@ -38,6 +38,7 @@ ETAPAS = [
 ("04b", "consolidacion/04b_casos.py",                  "casos por linea con sus 4 versiones",            True,  []),
 ("04c", "consolidacion/04c_casos_unicos.py",           "conteo unico de casos",                          True,  []),
 ("04d", "consolidacion/04d_perfil_estado.py",          "escalera de verificacion por estado y AGF",      True,  []),
+("04e", "consolidacion/04e_origen.py",                 "error de origen y su cadena de efectos",         True,  []),
 ("05",  "consolidacion/05_resumen.py",                 "cifras de portada v1",                           True,  []),
 ("06",  "consolidacion/06_ficha.py",                   "fichas de verificacion (requiere muestra)",      False, ["--muestra"]),
 ]

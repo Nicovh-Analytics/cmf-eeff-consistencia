@@ -5,7 +5,7 @@ No identifica fondos ni AGF: las AGF se agrupan por su tasa de error contra la t
 (intervalo de Wilson): bajo / indistinguible / alto, y aparte las que tienen pocas celdas evaluables.
 
 Lee:      encabezados.csv, cruce_resumen.csv, pdf_sin_estados.csv (03f), casos_unicos.csv (04c),
-          perfil_estado.csv y perfil_agf.csv (04d); precision.csv si existe (muestras de precision)
+          perfil_estado.csv y perfil_agf.csv (04d); origen.csv (04e); precision.csv si existe (muestras de precision)
 Escribe:  data/procesado/resumen_v1.csv (indicador, valor, detalle)
 """
 import math
@@ -60,6 +60,10 @@ def main():
     err = cu[cu["tipo"].astype(str).str.startswith("error")]
     fa_err = err[["rut", "anio_doc"]].drop_duplicates()
     out("errores (casos unicos)", len(err), " | ".join(f"{t} {n}" for t, n in err["tipo"].value_counts().items()))
+    if (P / "origen.csv").exists():
+        o = pd.read_csv(P / "origen.csv", dtype={"rut": str})
+        out("errores de origen", len(o), f"afectan {int(o['casos'].sum())} casos; {int((o['casos'] > 1).sum())} "
+            f"se propagan (a otro estado, al XML o al anio siguiente)")
     out("fondo-anio con al menos un error", len(fa_err), f"{len(fa_err) / len(con_pdf):.1%} de los que tienen XML y PDF")
     out("errores por estado", "", " | ".join(f"{e} {n}" for e, n in err["estado_raiz"].value_counts().items()))
     out("otros hallazgos (no error)", len(cu) - len(err),
