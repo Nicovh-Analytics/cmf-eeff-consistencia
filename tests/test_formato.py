@@ -118,3 +118,13 @@ def test_guion_entre_dos_lineas_no_es_desalineado():
     vx = {("X", 2012, "ESF", CI, "actual"): 0.0, ("X", 2012, "ESF", OC, "actual"): 289032.0}
     assert m.desalineado_columna(r, vx, frozenset({"TotalActivo"})).empty
     assert len(m.desalineado_columna(r.assign(actual=[289032.0, None]), vx)) == 1     # en blanco: si
+
+
+def test_total_en_cero_en_el_xml_no_es_desalineado():
+    # 8049 2021: el PDF imprime el total activo y deja otros activos en blanco; el XML trae el total en 0 y la
+    # cifra en otros activos -> lo corrio el XML, no el PDF
+    fila = lambda c, a: dict(rut="X", anio=2021, estado="ESF", pagina=5, codigo=c, glosa=c, actual=None, anterior=a,
+                             formato=None, glosa_de=None, monto_de=None, rotulo=None, ocr=False, metodo="espacial")
+    r = pd.DataFrame([fila("OtrosActivos", None), fila("TotalActivo", 563726335.0)])
+    vx = {("X", 2021, "ESF", "OtrosActivos", "anterior"): 563726335.0, ("X", 2021, "ESF", "TotalActivo", "anterior"): 0.0}
+    assert m.desalineado_columna(r, vx, frozenset({"TotalActivo"})).empty

@@ -200,6 +200,10 @@ def desalineado_columna(r, vx, totales=frozenset()):
                     if v is None or abs(v) <= 10 or not guion_vale(vb, a.codigo in totales, b.codigo in totales):
                         continue
                     xa, xb = vx.get((rut, anio, est, a.codigo, col)), vx.get((rut, anio, est, b.codigo, col))
+                    # un total que el XML trae en 0 con su cifra en una linea es el XML el que la corrio
+                    # (8049 2021: total activo 0 en el XML y el total en otros activos), no el PDF
+                    if a.codigo in totales and xa == 0:
+                        continue
                     if cerca(v, xb) and xa is not None and not cerca(v, xa):
                         filas.append(dict(rut=rut, anio=anio, estado=est, pagina=a.pagina, codigo=a.codigo,
                                           columna=col, tipo="monto_desalineado_columna", ocr=a.ocr, monto=v,
@@ -240,6 +244,8 @@ def desalineado_ecp(e, vx):
                 if b not in val or not guion_vale(vb, a in TOTALES_ECP, b in TOTALES_ECP):
                     continue
                 xb = vx.get((rut, anio, "ECP", cod[b], col))
+                if a in TOTALES_ECP and xa == 0:
+                    continue
                 if cerca(v, xb) and xa is not None and not cerca(v, xa):
                     filas.append(dict(rut=rut, anio=anio, estado="ECP", pagina=pag[a], codigo=cod[a], columna=col,
                                       tipo="monto_desalineado_columna", ocr=bool(ocr[a]), monto=v,
