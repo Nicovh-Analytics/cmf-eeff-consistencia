@@ -5,34 +5,40 @@ import pandas as pd
 
 m = importlib.import_module("validaciones.testigos.03j_cruces")
 TA, AN, EF, TP = "TotalActivo", "ActivoNetoAtribuibleALosParticipes", "EfectivoYEfectivoEquivalente", "TotalPasivo"
+OT, RP = "OtrasCuentasPorCobrar", "RescatesPorPagar"
+TOT = frozenset({TA, TP, AN})
 
 
-def xml(anio, valores, ctx="PeriodoActual"):
-    return [dict(archivo=f"X_{anio}", rut="X", anio=anio, contexto=ctx, estado="ESF", codigo=c, serie="", valor=v)
-            for c, v in valores.items()]
+def filas(anio, valores, ctx="PeriodoActual"):
+    return [dict(archivo=f"X_{anio}", rut="X", anio=anio, contexto=ctx, estado="ESF", codigo=c, serie="", valor=v,
+                 pagina=3, ocr=False, codigo_repetido=False) for c, v in valores.items()]
 
 
-def renglones(anio, pares):
-    return pd.DataFrame([dict(rut="X", anio=anio, estado="ESF", pagina=3, codigo=a, monto_de=b, monto_de_vecino=False,
-                              ocr=False) for a, b in pares])
+def correr(xml, pdf):
+    x, vx = m.valores_xml(pd.DataFrame(xml), {})
+    p = m.valores_pdf(pd.DataFrame(pdf))
+    vp = p.set_index(["rut", "anio", "contexto", "estado", "codigo"])["valor"].to_dict()
+    return m.votar(m.cruzados(p, x, vx, totales=TOT), x, vx, vp)
 
 
 def test_xml_cruzado_por_identidad():
-    # el XML trae el total activo y el activo neto cruzados: con la lectura del PDF cuadran las identidades
-    x = pd.DataFrame(xml(2023, {EF: 100.0, TA: 90.0, TP: 10.0, AN: 100.0}))
-    r = renglones(2023, [(TA, AN), (AN, TA)])
-    c = m.votar(m.cruzados(r), x, pd.DataFrame(columns=x.columns.tolist() + ["codigo_repetido"]), {})
-    assert set(c["lado"]) == {"XML"} and set(c["voto_identidad"]) == {"XML"}
-    assert set(c["tipo"]) == {"intercambio"}
+    # el XML trae el total activo y el activo neto cruzados solo en el actual: con la lectura del PDF cuadra
+    c = correr(filas(2023, {EF: 100.0, TA: 90.0, TP: 10.0, AN: 100.0}),
+               filas(2023, {EF: 100.0, TA: 100.0, TP: 10.0, AN: 90.0}))
+    assert set(c["lado"]) == {"XML"} and set(c["tipo"]) == {"intercambio"} and set(c["columna"]) == {"actual"}
 
 
-def test_pdf_cruzado_por_vecino():
-    # dos cuentas de la misma suma: la identidad no vota; el PDF de t+1 rotula bien el comparativo
-    OT = "OtrasCuentasPorCobrar"
-    x = pd.DataFrame(xml(2023, {EF: 30.0, OT: 70.0, TA: 100.0}) + xml(2024, {EF: 30.0, OT: 70.0}, "PeriodoAnterior"))
-    p = pd.DataFrame([dict(archivo="X_2024", rut="X", anio=2024, contexto="PeriodoAnterior", estado="ESF", codigo=EF,
-                           serie="", valor=30.0, codigo_repetido=False)])
-    c = m.votar(m.cruzados(renglones(2023, [(EF, OT), (OT, EF)])), x, p, {})
-    act = c[c["columna"] == "actual"]
-    assert set(act["voto_identidad"]) == {""} and act["voto_pdf_vecino"].any()
-    assert set(act["lado"]) == {"PDF"}
+def test_xml_cruzado_por_vecino():
+    # cruce dentro de la misma suma: la identidad no vota; el XML de t+1 trae lo que el PDF de t imprime
+    xml = filas(2023, {EF: 30.0, OT: 70.0, TA: 100.0}) + filas(2024, {EF: 70.0, OT: 30.0}, "PeriodoAnterior")
+    c = correr(xml, filas(2023, {EF: 70.0, OT: 30.0, TA: 100.0}))
+    assert set(c["voto_identidad"]) == {""} and set(c["lado"]) == {"XML"}
+
+
+def test_persistente_y_linea_contra_total():
+    # cada documento igual a si mismo en t+1: la glosa del PDF y la cuenta del XML difieren de forma estable
+    xml = filas(2023, {RP: 40.0, OT: 60.0, TP: 100.0}) + filas(2024, {RP: 40.0, OT: 60.0}, "PeriodoAnterior")
+    pdf = filas(2023, {RP: 60.0, OT: 40.0, TP: 100.0}) + filas(2024, {RP: 60.0, OT: 40.0}, "PeriodoAnterior")
+    assert set(correr(xml, pdf)["lado"]) == {"persistente"}
+    # una linea con la cifra del total (linea sola = subtotal) no es cruce
+    assert correr(filas(2023, {EF: 5.0, TA: 100.0}), filas(2023, {EF: 100.0, TA: 100.0})).empty
