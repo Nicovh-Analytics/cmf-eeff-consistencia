@@ -42,3 +42,18 @@ def test_persistente_y_linea_contra_total():
     assert set(correr(xml, pdf)["lado"]) == {"persistente"}
     # una linea con la cifra del total (linea sola = subtotal) no es cruce
     assert correr(filas(2023, {EF: 5.0, TA: 100.0}), filas(2023, {EF: 100.0, TA: 100.0})).empty
+
+
+def test_04c_senales_cruces(tmp_path, monkeypatch):
+    c04 = importlib.import_module("consolidacion.04c_casos_unicos")
+    monkeypatch.setattr(c04, "P", tmp_path)
+    base = dict(rut="X", anio=2019, estado="ESF", columna="actual", codigo=OT, monto_de=EF, pagina=3, xml_a=0.0,
+                xml_vecino=None, pdf_vecino=None)
+    pd.DataFrame([dict(base, pdf=5000.0, lado="XML"), dict(base, columna="anterior", pdf=5.0, lado="XML"),
+                  dict(base, anio=2020, pdf=900.0, lado="persistente"),
+                  dict(base, anio=2021, pdf=900.0, lado="sin_testigo")]).to_csv(tmp_path / "cruces.csv", index=False)
+    pd.DataFrame([dict(rut="X", anio=a, moneda="$$", es_ultimo_envio=True) for a in (2019, 2020, 2021)]
+                 ).to_csv(tmp_path / "encabezados.csv", index=False)
+    s = c04.senales_cruces()
+    assert s["clase"].tolist() == ["error", "inmaterial", "presentacion", "revisar"]
+    assert s["documento"].tolist() == ["XML", "XML", "PDF", "PDF/XML"]

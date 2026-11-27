@@ -19,6 +19,9 @@ Senales (esquema comun: fuente, rut, anio_doc, documento, columna, estado, linea
                                      impreso dos veces (presentacion, un caso por fondo-anio y tipo)
   03i   testigo_cmf.csv              el envio diario de la AGF a la CMF al 31-dic (activo neto y total del
                                      ESF): arbitro entre PDF y XML; activo neto de los EEFF distinto del envio
+  03j   cruces.csv                   cifra que el PDF rotula como una cuenta y el XML pone en otra: del
+                                     lado del XML (los documentos del anio vecino siguen al PDF) es error
+                                     del XML; del PDF o persistente, presentacion; el resto, revisar
   03f   documento_periodo.csv        el XML (o el PDF) no es el documento de ese fondo-anio: un caso
                                      por fondo-anio que absorbe las senales que comparan PDF con XML
 Clase: error / presentacion forman casos; lectura, inmaterial y revisar quedan como contexto.
@@ -55,14 +58,16 @@ NIVEL = {"documento": -1, "linea": 0, "subtotal": 1, "total": 2, "identidad": 3}
 # y dice la palabra que la distingue de la propia ("antes"/"despues", "financiamiento"/"operacion").
 FORMATO = {"rotulo_otra_cuenta": "glosa_otra_cuenta", "monto_desalineado": "monto_desalineado",
            "pagina_repetida": "pagina_repetida"}
-PLANTILLA = "rotulo|glosa_desactualizada|titulo_otro_estado|glosa_otra_cuenta|monto_desalineado|pagina_repetida"
+PLANTILLA = ("rotulo|glosa_desactualizada|titulo_otro_estado|glosa_otra_cuenta|monto_desalineado|pagina_repetida|"
+             "cruce/pdf|cruce/persistente")
 
 
 def tipo_plantilla(forma):
     f = str(forma)
     return ("rotulo" if "rotulo" in f else "titulo" if "titulo_otro" in f else
             "glosa_cuenta" if "glosa_otra" in f else "desalineado" if "desalineado" in f else
-            "repetida" if "repetida" in f else "glosa")
+            "repetida" if "repetida" in f else "cruce_pdf" if "cruce/pdf" in f else
+            "cruce_persistente" if "cruce/persistente" in f else "glosa")
 
 
 # 03f: tipo -> (documento, clase). Revision: los 6 confirmados a mano (fechas del XML, encabezado del PDF).
@@ -396,6 +401,45 @@ def senales_testigo():
                          "pagina": pd.NA})
 
 
+def senales_cruces():
+    """03j: una cifra que el PDF rotula como la cuenta a y el XML pone en la cuenta b. lado:
+      XML          el XML de t es el unico distinto (el PDF de t y los dos documentos del anio vecino la ponen
+                   en a) -> error del XML; bajo la materialidad de la moneda, inmaterial. Revision (5): 8455
+                   2019, 8676 2012 y 9576 2019 (comparativo copiado del actual) confirmados; 8458 2022 el
+                   XML siguio un desfase visual del PDF; 8160 2017 las glosas del PDF no sirven para decidir
+      PDF          el PDF del anio vecino la pone donde el XML de t -> presentacion (cruce_pdf; o lectura nuestra)
+      persistente  cada documento igual a si mismo en el anio vecino -> presentacion (cruce_persistente: la
+                   glosa del PDF y la cuenta del XML difieren de forma estable; 9921 confirmado; o el glosario)
+      el resto     revisar (se pega a un caso de la misma celda y |dif| si lo hay)"""
+    ruta = P / "cruces.csv"
+    if not ruta.exists():
+        print("(sin cruces.csv: correr el 03j)")
+        return pd.DataFrame(columns=COLS)
+    c = pd.read_csv(ruta, dtype={"rut": str}, low_memory=False)
+    enc = pd.read_csv(P / "encabezados.csv", dtype={"rut": str}, usecols=["rut", "anio", "moneda", "es_ultimo_envio"])
+    mon = enc[enc["es_ultimo_envio"]].drop_duplicates(["rut", "anio"]).set_index(["rut", "anio"])["moneda"].to_dict()
+    c["dif"] = c["pdf"].abs() - c["xml_a"].abs()
+    umbral = pd.Series([umbral_materialidad(mon.get((r, a), "")) for r, a in zip(c["rut"], c["anio"])], index=c.index)
+    xml = c["lado"] == "XML"
+    clase = pd.Series("revisar", index=c.index)
+    clase[xml] = "error"
+    clase[xml & (c["dif"].abs() <= umbral)] = "inmaterial"
+    clase[c["lado"].isin(["PDF", "persistente"])] = "presentacion"
+    forma = "cruce/" + c["lado"].map({"XML": "xml", "PDF": "pdf", "persistente": "persistente"}).fillna("revisar")
+    doc = c["lado"].map({"XML": "XML", "PDF": "PDF", "persistente": "PDF"}).fillna("PDF/XML")
+    f = lambda v: "-" if pd.isna(v) else f"{v:,.0f}"
+    print(f"03j: cruces por lado {c.drop_duplicates(['rut', 'anio', 'estado', 'columna'])['lado'].value_counts().to_dict()}"
+          f"; del XML materiales {int((clase == 'error').sum())}, inmateriales {int((clase == 'inmaterial').sum())}")
+    return pd.DataFrame({"fuente": "03j", "rut": c["rut"], "anio_doc": c["anio"], "documento": doc,
+                         "columna": c["columna"], "estado": c["estado"], "linea": c["codigo"], "nivel": "linea",
+                         "dif": c["dif"], "clase": clase, "forma": forma,
+                         "detalle": [f"PDF {f(p)} como {a[:40]}; XML {f(xa)} ahi y la cifra en {b[:40]}; "
+                                     f"vecino XML {f(xv)} PDF {f(pv)}"
+                                     for p, a, xa, b, xv, pv in zip(c["pdf"], c["codigo"], c["xml_a"], c["monto_de"],
+                                                                    c["xml_vecino"], c["pdf_vecino"])],
+                         "pagina": c["pagina"]})
+
+
 def senales():
     s = []
     # 03b: subtotal que no suma (PDF)
@@ -533,6 +577,7 @@ def senales():
                                "pagina": pd.NA}))
     s.append(senales_rotulos())
     s.append(senales_testigo())
+    s.append(senales_cruces())
     s.append(senales_04())
     t = pd.concat(s, ignore_index=True)
     t = t.reindex(columns=COLS + ["grupo"])
@@ -597,6 +642,13 @@ def agrupar(t):
     if m07.any():
         prim = t[m07].groupby(["rut", "anio_doc", "columna"])["caso_id"].transform("min")
         t.loc[m07, "caso_id"] = prim
+    # 03j: una cuenta cruzada en el XML rompe tambien sus identidades (07) con otras dif: un caso por celda
+    x03j = t[(t["fuente"] == "03j") & (t["clase"] == "error") & t["caso_id"].notna()]
+    for (rut, anio, col), g in x03j.groupby(["rut", "anio_doc", "columna"]):
+        mismo = t[(t["rut"] == rut) & (t["anio_doc"] == anio) & (t["columna"] == col) & t["caso_id"].notna()
+                  & (t["documento"] == "XML")]
+        ids = set(mismo["caso_id"])
+        t.loc[t["caso_id"].isin(ids), "caso_id"] = min(ids)
     # senales sin documento resuelto o "revisar": se pegan a un caso de la misma celda y |dif|
     casos = t[t["caso_id"].notna()]
     idx = {}
@@ -659,6 +711,7 @@ def tipificar(t):
                     "titulo_otro_estado" if "titulo_otro" in f else "glosa_otra_cuenta" if "glosa_otra" in f else
                     "monto_desalineado" if "desalineado" in f else "pagina_repetida" if "repetida" in f else
                     "difiere_envio_diario" if "eeff_vs_cmf" in f else
+                    "cruce_pdf" if "cruce/pdf" in f else "cruce_persistente" if "cruce/persistente" in f else
                     "glosa" if "glosa" in f else
                     "agregacion_xml" if "agregacion" in f else
                     "reexpresion" if "reexpresion" in f else "criterio" if "criterio" in f else "reclasificacion")
