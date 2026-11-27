@@ -56,8 +56,9 @@ ROTULO = 0.85      # parecido de la glosa con la oficial de la otra cuenta para 
 TIPOS = ["parentesis", "miles", "decimal", "signo_modelo", "signo_mixto", "rotulo_otra_cuenta", "redaccion_ambigua",
          "monto_desalineado", "intercambio", "monto_cruzado",
          "titulo_otro_estado", "pagina_repetida", "glosa_desactualizada", "glosa_contradictoria"]
-# direccion del flujo en la glosa: sustantivo y participio (dividendos e intereses pueden ser cobros o pagos)
-ENTRA_N, SALE_N = r"ingreso|venta|cobro|aporte|colocacion", r"gasto|egreso|compra|rescate|pago"
+# direccion del flujo en la glosa: sustantivo y participio. Sin direccion propia: dividendos e intereses
+# (cobros o pagos) y "pagos" ("pagos de capital (cupones) ... recibidos": el pago lo hace el emisor)
+ENTRA_N, SALE_N = r"ingreso|venta|cobro|aporte|colocacion", r"gasto|egreso|compra|rescate"
 ENTRA_P, SALE_P = r"recibid|percibid|cobrad", r"pagad"
 
 

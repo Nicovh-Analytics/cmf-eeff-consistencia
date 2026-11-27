@@ -47,6 +47,8 @@ def test_glosa_contradictoria():
     glosa, signo, sinon = m.oficial()
     assert m.contradictoria("Otros ingresos de operación pagados") and not m.contradictoria("Dividendos pagados")
     assert not m.contradictoria("Otros ingresos (egresos) de operación")
+    assert not m.contradictoria("Intereses, diferencias de cambio, pagos de capital (cupones) y reajustes recibidos")
+    assert m.contradictoria("Otros gastos de operación percibidos")
     fila = lambda g, c: dict(rut="X", anio=2018, estado="EFE", pagina=5, codigo=c, glosa=g, actual=59964.0,
                              anterior=None, formato=None, glosa_de=None, monto_de=None, rotulo=None, ocr=False,
                              metodo="espacial")
