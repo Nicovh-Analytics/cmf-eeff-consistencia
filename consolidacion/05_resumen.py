@@ -89,7 +89,8 @@ def main():
     # la muestra de precision es anterior al 03j: los errores que solo ve el 03j (cuenta cruzada en el XML)
     # no estan en ella; se informan aparte hasta la muestra v2
     solo03j = err[err["fuentes"].astype(str) == "03j"]
-    if len(solo03j):
+    con_03j = pr.exists() and (pd.read_csv(pr)["tipo"] == "error_XML/03j").any()
+    if len(solo03j) and not con_03j:
         out("errores fuera de la muestra de precision", len(solo03j),
             "error_XML que solo ve el 03j (cuenta cruzada en el XML); muestra v2 pendiente")
 
