@@ -127,7 +127,8 @@ def ecp() -> pd.DataFrame:
     con el mismo formato que los demas hechos del PDF (archivo = "rut_anio", contexto, estado, codigo,
     serie '' = Total) y lo propio del ECP: fila leida (inicio, aportes, ...), k (columna en el bloque)."""
     c = pd.read_csv(P / "ecp_celdas.csv", dtype={"rut": str, "codigo": str, "serie": str}, keep_default_na=False,
-                    na_values={"valor": [""]})
+                    na_values={"valor": [""]}, low_memory=False)
+    c["valor"] = pd.to_numeric(c["valor"], errors="coerce")
     c["archivo"] = c["rut"] + "_" + c["anio"].astype(str)
     c["contexto"] = c["columna"].map({"actual": "PeriodoActual", "anterior": "PeriodoAnterior"})
     c["estado"] = "ECP"
