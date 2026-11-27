@@ -342,6 +342,9 @@ def senales_rotulos():
     if rf.exists():
         f = pd.read_csv(rf, dtype={"rut": str, "codigo": str})
         f = f[f["tipo"].isin(FORMATO) & ~f["ocr"].fillna(False).astype(bool)]
+        # la glosa contradictoria que es la del modelo CMF es un hallazgo del modelo (05: formato_modelo.csv),
+        # no un caso de cada fondo-anio que la copia; solo la redaccion propia de la AGF es caso
+        f = f[~((f["tipo"] == "glosa_contradictoria") & f["detalle"].astype(str).str.startswith("glosa del modelo"))]
         n = len(f)
         out.append(pd.DataFrame({"fuente": "03h", "rut": f["rut"], "anio_doc": f["anio"], "documento": "PDF",
                                  "columna": "actual", "estado": f["estado"], "linea": f["codigo"].fillna("pagina"),

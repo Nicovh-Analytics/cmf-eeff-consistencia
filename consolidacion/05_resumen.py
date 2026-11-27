@@ -68,6 +68,13 @@ def main():
     out("errores por estado", "", " | ".join(f"{e} {n}" for e, n in err["estado_raiz"].value_counts().items()))
     out("otros hallazgos (no error)", len(cu) - len(err),
         " | ".join(f"{t} {n}" for t, n in cu.loc[~cu.index.isin(err.index), "tipo"].value_counts().head(6).items()))
+    # hallazgo del modelo CMF: una glosa oficial que dice cobro y pago a la vez, y cuantos la copian
+    fm = P / "formato_modelo.csv"
+    if fm.exists():
+        for r in pd.read_csv(fm).itertuples():
+            out("glosa contradictoria del modelo CMF", r.copian,
+                f"'{r.glosa_modelo}': la copian {r.copian} de {r.fondo_anio_cuenta} fondo-anio que imprimen la "
+                f"cuenta ({r.pct}%), {r.agf_copian} de {r.agf_cuenta} AGF")
     if "localizacion" in err:
         out("errores con la cifra localizada (03g)", int(err["localizacion"].notna().sum()),
             f"misma cifra en t y t+1: {int(verdad(err['repite_t1'].fillna(False)).sum())}")

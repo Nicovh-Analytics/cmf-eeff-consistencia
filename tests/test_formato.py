@@ -55,3 +55,15 @@ def test_glosa_contradictoria():
     h = m.hallazgos(r, signo, glosa=glosa, sinon=sinon)
     g = h[h["tipo"] == "glosa_contradictoria"]
     assert len(g) == 1 and g["detalle"].iloc[0].startswith("glosa del modelo CMF")
+
+
+def test_modelo_contradictorio():
+    glosa, signo, sinon = m.oficial()
+    fila = lambda rut, g: dict(rut=rut, anio=2018, estado="EFE", pagina=5, codigo="OtrosIngresosDeOperacion", glosa=g,
+                               actual=1.0, anterior=None, formato=None, glosa_de=None, monto_de=None, rotulo=None,
+                               ocr=False, metodo="espacial")
+    r = pd.DataFrame([fila("A", "Otros ingresos de operación pagados"), fila("B", "Otros ingresos de operación")])
+    h = m.hallazgos(r, signo, glosa=glosa, sinon=sinon)
+    enc = pd.DataFrame([dict(rut="A", anio=2018, nombre_agf="X"), dict(rut="B", anio=2018, nombre_agf="Y")])
+    mc = m.modelo_contradictorio(r, h, glosa, enc)
+    assert mc[["fondo_anio_cuenta", "copian", "agf_cuenta", "agf_copian"]].values.tolist() == [[2, 1, 2, 1]]

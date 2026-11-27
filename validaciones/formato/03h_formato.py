@@ -37,7 +37,8 @@ No cambia el conteo de errores (04c): es la base para decidir que tipos pasan a 
 presentacion y para el informe por AGF.
 
 Lee:      renglones_pdf.csv (03b), ecp_bloques.csv (03d), encabezados.csv, catalogo/fm
-Escribe:  formato.csv, formato_fondo.csv, formato_agf.csv
+Escribe:  formato.csv, formato_fondo.csv, formato_agf.csv, formato_modelo.csv (glosas contradictorias del
+          propio modelo CMF: cuantos fondo-anio y AGF que imprimen la cuenta copian esa glosa)
 """
 import re
 import sys
@@ -239,6 +240,22 @@ def hallazgos(r, signo, ecp=None, glosa=None, sinon=None):
     return pd.concat([o.reindex(columns=COLS) for o in out if len(o)], ignore_index=True).reindex(columns=COLS)
 
 
+def modelo_contradictorio(r, h, glosa, enc):
+    """Por cada cuenta cuya glosa OFICIAL es contradictoria: fondo-anio que imprimen la cuenta, cuantos copian
+    la glosa del modelo, cuantos la redactan sin contradiccion, y las AGF."""
+    cods = [c for c, g in glosa.items() if contradictoria(g)]
+    filas = []
+    for c in cods:
+        imp = r[(r["codigo"] == c)][["rut", "anio"]].drop_duplicates().merge(enc, how="left")
+        cop = h[(h["tipo"] == "glosa_contradictoria") & (h["codigo"] == c)
+                & h["detalle"].astype(str).str.startswith("glosa del modelo")][["rut", "anio"]].drop_duplicates()
+        cop = cop.merge(enc, how="left")
+        filas.append(dict(codigo=c, glosa_modelo=glosa[c], fondo_anio_cuenta=len(imp), copian=len(cop),
+                          pct=round(len(cop) / len(imp) * 100, 1) if len(imp) else None,
+                          agf_cuenta=imp["nombre_agf"].nunique(), agf_copian=cop["nombre_agf"].nunique()))
+    return pd.DataFrame(filas)
+
+
 def adherencia(r, glosa, sinon):
     """Parecido de cada glosa (con codigo) a la oficial de su cuenta (la mejor entre sinonimos)."""
     s = r[r["codigo"].notna() & r["glosa"].notna()][["rut", "anio", "codigo", "glosa"]].copy()
@@ -331,7 +348,11 @@ def main():
         x = hs[hs["tipo"] == t].head(3)
         for e in x.itertuples():
             print(f"  {t:<20} {e.rut} {e.anio} {e.estado} p{e.pagina} {e.codigo or ''} {e.columna}: {e.detalle}")
-    print(f"\nsalida: {P / 'formato.csv'}, formato_fondo.csv, formato_agf.csv")
+    mc = modelo_contradictorio(r, h, glosa, enc)
+    mc.to_csv(P / "formato_modelo.csv", index=False, encoding="utf-8-sig")
+    print("\nglosas contradictorias del propio modelo CMF (fondo-anio que imprimen la cuenta y copian la glosa):")
+    print(mc.to_string(index=False) if len(mc) else "  ninguna")
+    print(f"\nsalida: {P / 'formato.csv'}, formato_fondo.csv, formato_agf.csv, formato_modelo.csv")
     return 0
 
 
