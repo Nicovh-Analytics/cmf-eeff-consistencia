@@ -58,7 +58,7 @@ NIVEL = {"documento": -1, "linea": 0, "subtotal": 1, "total": 2, "identidad": 3}
 # y dice la palabra que la distingue de la propia ("antes"/"despues", "financiamiento"/"operacion").
 # Monto en otra linea (monto_desalineado, completo o en una columna): error del PDF de UBICACION, no
 # presentacion (revision 2026-11-26): la cifra esta bien y los totales cuadran, pero dos lineas del estado
-# informan un monto que no es el suyo (10383: el "antes de distribucion" en la linea de distribucion; un ERI
+# informan un monto que no es el suyo (un ERI con el "antes de distribucion" en la linea de distribucion; un ERI
 # 2022 con la utilidad antes de impuestos en "Impuestos"). Un caso por celda con su monto; subtipo
 # "ubicacion" en casos_unicos para separarlo de las cifras mal calculadas.
 FORMATO = {"rotulo_otra_cuenta": "glosa_otra_cuenta", "monto_desalineado": "ubicacion/monto_desalineado",
@@ -371,13 +371,13 @@ def senales_rotulos():
 def senales_testigo():
     """03i: el envio diario de la AGF a la CMF al 31-dic como tercer documento (activo neto y total activo
     del ESF). Si coincide con uno de los dos y no con el otro, dice de que lado esta el error:
-      xml_distinto  PDF = CMF, el XML no                     -> error del XML (revision: 8107 2013, confirmado)
-      pdf_distinto  XML = CMF, el PDF no, por menos de 1%, en el activo neto -> error del PDF (8976 2014: un
-                    digito, confirmado); en el total activo, revisar (8710 y 8787 2011: el PDF no trae los
-                    estados y se leyo el total de la cartera de una nota; 9623 2025: el PDF suma bien). Con
+      xml_distinto  PDF = CMF, el XML no                     -> error del XML (revision: confirmado)
+      pdf_distinto  XML = CMF, el PDF no, por menos de 1%, en el activo neto -> error del PDF (un
+                    digito, confirmado); en el total activo, revisar (dos PDF de 2011 no traen los
+                    estados y se leyo el total de la cartera de una nota; otro PDF suma bien). Con
                     1% o mas o el PDF en 0 es lectura nuestra (2011: el ESF de 3 columnas)
       eeff_vs_cmf   PDF = XML y el envio diario distinto (activo neto) -> difiere_envio_diario: ajuste
-                    posterior al cierre o error en uno de los dos lados (9019 2014: los EEFF informan como
+                    posterior al cierre o error en uno de los dos lados (un fondo: los EEFF informan como
                     activo neto el activo total del envio; la diferencia son los pasivos del envio)
     El total activo de los EEFF difiere del ACTIVO_TOT del envio en varias AGF por definicion: ahi el
     patron eeff_vs_cmf no se usa."""
@@ -394,7 +394,7 @@ def senales_testigo():
     pd_ = t["patron"] == "pdf_distinto"
     # solo en el activo neto: el total activo del envio no siempre es el de los EEFF (definicion), y un PDF
     # de 2011 sin los estados (solo notas) deja leer como "Total activos" el de la cartera de la nota
-    # (8710 y 8787 2011: la diferencia es el efectivo). Ahi el PDF distinto queda en revisar.
+    # (dos PDF de 2011: la diferencia es el efectivo). Ahi el PDF distinto queda en revisar.
     pdf_err = pd_ & (t["testigo"] == "activo_neto") & (t["pdf"] != 0) & (t["rel_pdf"].abs() < 0.01)
     pdf_rev = pd_ & (t["testigo"] == "activo_total") & (t["pdf"] != 0) & (t["rel_pdf"].abs() < 0.01)
     ev = (t["patron"] == "eeff_vs_cmf") & (t["testigo"] == "activo_neto")
@@ -418,15 +418,15 @@ def senales_testigo():
 def senales_cruces():
     """03j: una cifra que el PDF rotula como la cuenta a y el XML pone en la cuenta b. lado:
       XML          el XML de t es el unico distinto (el PDF de t y los dos documentos del anio vecino la ponen
-                   en a) -> error del XML; bajo la materialidad de la moneda, inmaterial. Revision (5): 8455
-                   2019, 8676 2012 y 9576 2019 (comparativo copiado del actual) confirmados; 8458 2022 el
-                   XML siguio un desfase visual del PDF; 8160 2017 las glosas del PDF no sirven para decidir
+                   en a) -> error del XML; bajo la materialidad de la moneda, inmaterial. Revision (5): tres
+                   confirmados (uno, comparativo copiado del actual); en uno el XML siguio un desfase visual
+                   del PDF; en otro las glosas del PDF no sirven para decidir. Muestra v2: 25 de 25
       PDF          el PDF del anio vecino la pone donde el XML de t -> presentacion (cruce_pdf; o lectura nuestra)
       persistente  cada documento igual a si mismo en el anio vecino -> presentacion (cruce_persistente: la
-                   glosa del PDF y la cuenta del XML difieren de forma estable; 9921 confirmado; o el glosario)
+                   glosa del PDF y la cuenta del XML difieren de forma estable; confirmado en revision; o el glosario)
       glosa_contradictoria  la glosa de la cuenta (en t o en el anio vecino que sirvio de testigo) dice
                    cobro y pago a la vez (03h): el cruce es efecto de esa glosa -> inconsistencia de presentacion
-                   (8160 2017: "Otros ingresos de operacion pagados", la glosa del modelo CMF)
+                   ("Otros ingresos de operacion pagados", la glosa del modelo CMF)
       el resto     revisar (se pega a un caso de la misma celda y |dif| si lo hay)"""
     ruta = P / "cruces.csv"
     if not ruta.exists():

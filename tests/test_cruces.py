@@ -60,7 +60,7 @@ def test_04c_senales_cruces(tmp_path, monkeypatch):
 
 
 def test_por_glosa(tmp_path):
-    # 8160 2017: la glosa contradictoria esta en el PDF del anio vecino (testigo de la columna actual)
+    # la glosa contradictoria esta en el PDF del anio vecino (testigo de la columna actual)
     c = pd.DataFrame([dict(rut="X", anio=2017, estado="EFE", columna="actual", codigo="OtrosIngresosDeOperacion",
                            monto_de="MontosRecibidosDeSociedadAdministradoraEIntermediarios", lado="XML"),
                       dict(rut="X", anio=2015, estado="EFE", columna="actual", codigo="OtrosIngresosDeOperacion",

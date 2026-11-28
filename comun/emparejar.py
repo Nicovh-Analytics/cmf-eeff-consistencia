@@ -395,7 +395,7 @@ def emparejar(rs, xml, estado, glosario=True, corridos=True, vocabulario=None, c
             if c and rs[i]["coincide"] in ("glosa", "posicion") and any(x is not None for x in xml[c]):
                 cand = [k for k, x in xml_todo.items() if can(k) != can(c) and calza_todo(v(i), x)]
                 # si una de las cuentas que calzan es la de la glosa del renglon de al lado (sin montos), los
-                # montos quedaron impresos una linea corridos: es esa (10383 2023: los del "antes de
+                # montos quedaron impresos una linea corridos: es esa (un ERI: los del "antes de
                 # distribucion", de tres lineas, impresos en la linea de "Distribucion de beneficios")
                 sin_m = lambda j: 0 <= j < len(rs) and rs[j]["actual"] is None and rs[j]["anterior"] is None
                 arriba = []

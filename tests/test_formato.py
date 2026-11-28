@@ -95,7 +95,7 @@ def test_desalineado_columna_y_sin_glosa():
 
 
 def test_desalineado_ecp():
-    # 9061 2015 (comparativo 2014): resultado antes de distribucion con guion y su monto en "Distribucion"
+    # ECP (comparativo): resultado antes de distribucion con guion y su monto en "Distribucion"
     cod = importlib.import_module("validaciones.estructura.03d_ecp").CODIGO_FILA
     celda = lambda f, v: dict(rut="X", anio=2015, contexto="PeriodoAnterior", fila=f, valor=v, es_total=True,
                               pagina=8, ocr=False)
@@ -121,7 +121,7 @@ def test_guion_entre_dos_lineas_no_es_desalineado():
 
 
 def test_total_en_cero_en_el_xml_no_es_desalineado():
-    # 8049 2021: el PDF imprime el total activo y deja otros activos en blanco; el XML trae el total en 0 y la
+    # el PDF imprime el total activo y deja otros activos en blanco; el XML trae el total en 0 y la
     # cifra en otros activos -> lo corrio el XML, no el PDF
     fila = lambda c, a: dict(rut="X", anio=2021, estado="ESF", pagina=5, codigo=c, glosa=c, actual=None, anterior=a,
                              formato=None, glosa_de=None, monto_de=None, rotulo=None, ocr=False, metodo="espacial")

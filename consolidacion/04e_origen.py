@@ -23,7 +23,7 @@ Solo se unen diferencias de mas de MIN_DIF: con montos chicos coincidir en +-2 p
 
 Uso:
     python consolidacion/04e_origen.py                  todo
-    python consolidacion/04e_origen.py 8723 2021 ...    ademas, las cadenas de esos fondo-anio
+    python consolidacion/04e_origen.py RUT ANIO ...    ademas, las cadenas de esos fondo-anio
 
 Lee:      casos_unicos.csv (04c)
 Escribe:  origen.csv (un error de origen por fila, con su cadena) y casos_origen.csv (caso -> origen)
@@ -37,7 +37,7 @@ from config import CMF_HOME, casos_conocidos
 P = CMF_HOME / "procesado"
 TOL = 2
 MIN_DIF = 10
-REL = 0.005           # misma columna y documento: |dif| iguales al 0,5% (9625 2021: aumento neto 2.914, saldo final 2.923)
+REL = 0.005           # misma columna y documento: |dif| iguales al 0,5% (un EFE: aumento neto 2.914, saldo final 2.923)
 NIVEL = {"documento": -1, "linea": 0, "subtotal": 1, "total": 2, "identidad": 3}
 # dentro de un estado, el componente antes que el agregado que lo arrastra (financiamiento -> aumento neto)
 JERARQUIA = {"operacion": 0, "financiamiento": 0, "total_ingresos": 0, "total_gastos": 0, "total_activo": 0,

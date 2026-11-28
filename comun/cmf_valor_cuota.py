@@ -2,7 +2,7 @@
 Lector del Excel de la CMF "Informe por Periodos de Patrimonio, Rentabilidad, Participes y Valor de la
 Cuota" (consulta "Periodos por Fondo Mutuo", periodicidad mensual): una fila por mes y serie.
 
-    periodo "DICIEMBRE/2023" | RUN "9084-0" | tipo | administradora | serie | moneda | patrimonio (1) |
+    periodo "DICIEMBRE/2023" | RUN "9999-9" | tipo | administradora | serie | moneda | patrimonio (1) |
     variacion real | % sistema | rentabilidad nominal | participes | variacion | % sistema | valor cuota
     (1) millones de pesos o de la moneda del fondo, en moneda corriente al ultimo dia del mes
 

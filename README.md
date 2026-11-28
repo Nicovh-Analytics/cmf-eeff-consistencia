@@ -4,7 +4,7 @@
 
 Este proyecto descarga los estados financieros anuales de los fondos mutuos chilenos publicados por la CMF (2011–2025) y los audita en forma automática, con los mismos criterios que usaría un auditor: cuadraturas, consistencia entre documentos y continuidad entre períodos.
 
-> *English summary: an automated audit of ~4,500 annual financial statements of Chilean mutual funds published by the regulator (CMF). It cross-checks the machine-readable XML against the signed PDF, verifies continuity between years, recomputes subtotals of the balance sheet, income statement and cash-flow statement directly from the PDF using word coordinates (OCR for scanned pages), and checks accounting identities across statements. Every flagging rule was validated against the original documents by manual review. Result (v1): 350 errors in 281 of 4,512 fund-years, at 96.8% ± 2.6 precision on 122 hand-checked cases; the regulator confirmed it does not check XML against PDF on filing.*
+> *English summary: an automated audit of ~4,500 annual financial statements of Chilean mutual funds published by the regulator (CMF). It cross-checks the machine-readable XML against the signed PDF, verifies continuity between years, recomputes subtotals of the balance sheet, income statement and cash-flow statement directly from the PDF using word coordinates (OCR for scanned pages), and checks accounting identities across statements. Every flagging rule was validated against the original documents by manual review. Result (v2): 476 errors in 397 of 4,512 fund-years, at 98.0% ± 1.6 precision on 175 hand-checked cases; v2 also finds accounts swapped in the XML that a figure-by-figure cross-check cannot see, and one contradictory line label in the regulator's own template, copied in 27.6% of the fund-years that print that line. The regulator confirmed it does not check XML against PDF on filing.*
 
 ---
 
@@ -17,19 +17,57 @@ Cada fondo mutuo entrega a la CMF dos versiones de sus estados financieros:
 
 Nadie verifica de forma sistemática que digan lo mismo. Consultada por este proyecto, la CMF respondió (noviembre de 2026) que no existe un procedimiento de verificación de correspondencia entre las cifras del XML y las del PDF de un mismo envío al recibirlos. Tampoco se verifica que el "año anterior" que muestra cada reporte coincida con lo que se auditó ese año, ni que el PDF sume.
 
-## En cifras (v1, fondos mutuos)
+## En cifras (v2, fondos mutuos)
 
 | | |
 |---|---|
 | estados financieros anuales revisados | **4.512** fondo-año (432 fondos, 27 administradoras, 2011–2025) |
 | celdas fondo-año × estado evaluables | 98,4% (19 PDF no se pueden verificar: 0 páginas, solo la opinión del auditor o escaneados sin texto) |
 | celdas evaluables sin ningún error | 95,7% |
-| **errores**, contados una vez aunque los vean varias etapas | **350**: 234 en el PDF, 91 en el XML, 25 de continuidad |
-| fondo-año con al menos un error | 281 (6,2%) |
-| **precisión** (122 casos revisados a mano en tres muestras aleatorias) | **96,8% ± 2,6** (PDF 97%, XML 95%); la última muestra, revisada en una sola pasada: 25/25 |
-| diferencias de presentación (no son error: reexpresiones, reclasificaciones, desglose distinto, rótulos) | 676 |
+| **errores**, contados una vez aunque los vean varias etapas | **476**: 251 en el PDF (16 de ellos, un monto impreso en la línea de otra cuenta), 202 en el XML (114 de ellos, cuentas cruzadas que el cruce de cifras no ve), 23 de continuidad |
+| errores de origen (un error arrastrado a otra celda o al año siguiente cuenta una vez) | 443 |
+| fondo-año con al menos un error | 397 (8,8%) |
+| **precisión** (175 casos revisados a mano en cuatro muestras aleatorias) | **98,0% ± 1,6** (PDF 98%, XML 96%, cuentas cruzadas del XML 25/25, continuidad 100%) |
+| hallazgos que no son error (presentación, reexpresiones, reclasificaciones, desglose distinto, rótulos) | 1.191 |
+| glosa contradictoria del propio modelo CMF ("Otros ingresos de operación pagados") | la copian 1.016 de 3.680 fondo-año que imprimen la cuenta (27,6%), en 11 de 26 administradoras |
 
-Un **error** es una cifra que no cuadra con su propio documento, o que difiere entre documentos cuando uno de ellos es demostrablemente el malo. Por administradora, la tasa de celdas con error es 1,67%: comparando el intervalo de confianza de cada una con esa tasa, 5 están por debajo (0,6–0,9%), 4 por encima (2,7–4,2%), 6 no se distinguen y 12 tienen pocas celdas para decirlo. No se publican resultados por fondo ni por administradora (ver *Uso responsable*). Las cifras salen de `consolidacion/05_resumen.py`; el detalle de cada etapa está más abajo.
+Un **error** es una cifra que no cuadra con su propio documento, que difiere entre documentos cuando uno de ellos es demostrablemente el malo, o un monto impreso en la línea de otra cuenta. Por administradora, la tasa de celdas con error es 2,35%: comparando el intervalo de confianza de cada una con esa tasa, 3 están por debajo (0,65–1,11%), 4 por encima (3,38–5,92%), 8 no se distinguen y 12 tienen pocas celdas para decirlo. No se publican resultados por fondo ni por administradora (ver *Uso responsable*). Las cifras salen de `consolidacion/05_resumen.py`; el contraste de los hallazgos con NIC 1 y NIC 7 está en [`docs/contraste_ifrs.md`](docs/contraste_ifrs.md). Las cifras de v1 quedan en el tag `v1-fm`.
+
+## Qué cambió desde v1
+
+**Por qué una v2.** La v1 respondía la pregunta para fondos mutuos con reglas escritas en el código de cada etapa. La v2 reconstruye el motor para que las reglas contables sean datos (un catálogo con las cuentas y las identidades del modelo CMF), las cifras de cada documento sean una tabla común (hechos del XML y del PDF) y cada etapa evalúe el mismo catálogo. Así el mismo motor se puede aplicar después a fondos de inversión. En el camino, la v2 deja de usar el XML como árbitro de lo que dice el PDF, y eso destapó errores que la v1 no podía ver.
+
+**Cifras: v1 y v2.**
+
+| | v1 | v2 |
+|---|---|---|
+| errores (casos únicos) | 350 | 476 |
+| en el PDF | 234 | 251, de ellos 16 de ubicación (monto en otra línea) |
+| en el XML | 91 | 202, de ellos 114 que solo se ven cruzando cuentas |
+| de continuidad | 25 | 23 |
+| errores de origen (un error arrastrado cuenta una vez) | — | 443 (33 se propagan a otra celda, al XML o al año siguiente) |
+| fondo-año con al menos un error | 281 (6,2%) | 397 (8,8%) |
+| celdas con error | 1,68% | 2,35% |
+| precisión (casos revisados a mano) | 96,8% ± 2,6 (122 casos) | 98,0% ± 1,6 (175 casos) |
+| precisión de los errores del XML que solo se ven cruzando cuentas | — | 25 de 25 (IC 95% 87–100%) |
+| hallazgos que no son error | 676 | 1.191 |
+
+**De dónde viene la diferencia.**
+- **Cuentas cruzadas en el XML (+114).** El cruce espejo compara conjuntos de cifras: si el XML pone una cifra en la cuenta equivocada, las dos cifras siguen estando en ambos documentos y no se ve. La v1 además asignaba a cada renglón del PDF la cuenta del XML con el mismo monto, lo que escondía el cruce. La v2 asigna la cuenta por la glosa y decide de qué lado está el error con los documentos del año vecino: si el PDF del año y los dos documentos del año siguiente (o anterior) ponen la cifra en una cuenta y solo el XML la pone en otra, el error es del XML.
+- **Monto en otra línea (+16).** Un monto impreso en la línea de otra cuenta (por ejemplo, la utilidad antes de impuestos impresa en la línea de impuestos) es un error del PDF aunque los totales cuadren: dos líneas del estado informan un monto que no es el suyo. Se cuentan aparte de las cifras mal calculadas.
+- **Errores de origen.** El conteo sigue siendo por celda, pero ahora se une cada error con sus efectos (el subtotal que lo arrastra, el XML que lo copió, el comparativo del año siguiente). Resuelve el límite de la v1 "un error de origen cuenta más de una vez".
+
+**Categorías nuevas (no son error).**
+- **Formato de presentación** contra el modelo de la CMF: signos mixtos, rótulos de otra cuenta, montos sin glosa, páginas repetidas, títulos de otro estado. Se mide por fondo-año y por administradora, con la adherencia de la redacción al modelo.
+- **Glosa contradictoria del propio modelo CMF.** La glosa oficial de "otros ingresos de operación" es "Otros ingresos de operación pagados": no deja ver si es cobro o pago (NIC 7.18(a) pide cobros y pagos brutos por separado). La copian 1.016 de 3.680 fondo-año que imprimen la cuenta (27,6%), en 11 de 26 administradoras. Es un hallazgo del modelo, no de cada fondo.
+- **Testigo externo.** El envío diario de cada administradora a la CMF al 31 de diciembre (cartola diaria) se usa como tercer documento para el activo neto: cuando coincide con uno de los dos y no con el otro, dice cuál está mal. En 16 fondo-año los estados financieros (PDF y XML de acuerdo) difieren del envío diario.
+
+**Lo que se corrigió de la v1.** Tres "cruces del XML" anotados en la revisión de la v1 eran lecturas del emparejador antiguo (un rótulo impreso dos veces, "total activo neto" tomado como total activo): XML y PDF coinciden cifra por cifra.
+
+**Límites que siguen.**
+- La precisión se mide con 175 casos: los límites inferiores por estrato van de 82% (continuidad) a 92% (PDF).
+- El lector de PDF no cubre las páginas escaneadas sin texto ni todas las plantillas; lo que no se pudo leer queda como "no evaluable".
+- Una cuenta clasificada distinto en el XML puede responder a un cambio de criterio de la administradora; se cuenta como error porque el XML no dice lo mismo que su propio PDF, pero falta medir si esos casos se agrupan por administradora y año.
 
 ## Qué hace
 
@@ -45,10 +83,14 @@ Un **error** es una cifra que no cuadra con su propio documento, o que difiere e
 | 3d | `03d_ecp.py` + `lector_multicolumna.py` | **Estado de cambios en el activo neto (ECP):** lo lee desde el PDF con una columna por serie y verifica cada serie, el total y su cruce con el ESF y con el año anterior. |
 | 3e | `03e_comparativos.py` | **Cuatro versiones de cada monto:** PDF y XML del año, y el comparativo de ambos en el informe siguiente; la versión que no calza dice qué documento cambió. |
 | 3f | `03f_documento.py` | **Documento:** que el PDF y el XML sean del fondo y período declarados; PDF sin estados legibles. |
+| 3h | `03h_formato.py` | **Formato de presentación** contra el modelo CMF: signos, rótulos de otra cuenta, montos corridos o sin glosa, títulos y fechas, glosas contradictorias; adherencia de la redacción por fondo-año y administradora. |
+| 3i | `03i_testigo_cmf.py` | **Testigo externo:** el envío diario de la administradora a la CMF al 31 de diciembre (cartola diaria) contra el activo neto y el total activo del ESF. |
+| 3j | `03j_cruces.py` | **Cuentas cruzadas:** una cifra que el PDF rotula como una cuenta y el XML pone en otra; los documentos del año vecino dicen de qué lado está el error. |
 | 3g | `03g_localizacion.py` | **Localización:** cuando un subtotal del PDF no suma, sigue la cadena hasta el efectivo del balance para decir qué cifra está mala (el subtotal impreso o una línea) o si es lectura. |
 | 4 | `04_candidatos.py` | Tipifica las discrepancias del cruce (redistribución entre series, signo invertido, rótulo, agregación), les asigna gravedad y aplica materialidad. |
 | 4b | `04b_casos.py` | Agrupa en casos las señales de los comparativos con la misma diferencia. |
 | 4c | `04c_casos_unicos.py` | **Conteo único:** junta las señales de todas las etapas en casos (cada error cuenta una vez) y los tipifica: error del PDF, del XML, de continuidad, o presentación. |
+| 4e | `04e_origen.py` | **Error de origen:** une cada error con sus efectos (el subtotal que lo arrastra, el XML que lo copió, el comparativo del año siguiente) y cuenta el origen una vez. |
 | 4d | `04d_perfil_estado.py` | **Escalera de verificación** por fondo-año y estado: qué se pudo verificar y qué quedó limpio. |
 | 5 | `05_resumen.py` | Cifras de portada. |
 | 6 | `06_ficha.py` | Ficha Excel por caso: XML, PDF y año anterior, lado a lado, para revisión manual. |
@@ -183,16 +225,17 @@ Además, **3 XML repiten íntegramente las cifras del año anterior**, con el pe
 
 ## Validación
 
-**Precisión del conteo final (04c).** Tres muestras aleatorias estratificadas por tipo de error. Un caso cuenta como confirmado si el error está en el documento que dice su tipo.
+**Precisión del conteo final (04c).** Cuatro muestras aleatorias estratificadas por tipo de error; la cuarta (v2) cubre los casos que las anteriores no revisaron, con un estrato propio para las cuentas cruzadas del XML, que v1 no podía ver. Un caso cuenta como confirmado si el error está en el documento que dice su tipo. Los veredictos anteriores valen para los casos que siguen existiendo hoy con el mismo tipo (175 de 199).
 
 | tipo | errores | revisados | confirmados | precisión (IC 95%) |
 |---|---|---|---|---|
-| error del PDF | 234 | 68 | 66 | 97% (90–99%) |
-| error del XML | 91 | 41 | 39 | 95% (84–99%) |
-| continuidad | 25 | 13 | 13 | 100% (77–100%) |
-| **total** | **350** | **122** | | **96,8% ± 2,6** |
+| error del PDF | 251 | 86 | 84 | 98% (92–99%) |
+| error del XML (etapas de v1) | 88 | 46 | 44 | 96% (85–99%) |
+| error del XML: cuentas cruzadas (03j) | 114 | 25 | 25 | 100% (87–100%) |
+| continuidad | 23 | 18 | 18 | 100% (82–100%) |
+| **total** | **476** | **175** | | **98,0% ± 1,6** |
 
-En las dos primeras muestras se volvieron a mirar casos no confirmados (nunca los confirmados), lo que solo puede subir la cifra: sin esos cambios la precisión es 94,2%. La tercera muestra se revisó en una sola pasada, sin volver sobre ningún veredicto: 25 de 25. Lo no confirmado son diferencias de presentación entre PDF y XML sin un documento demostrablemente malo.
+En las dos primeras muestras se volvieron a mirar casos no confirmados (nunca los confirmados), lo que solo puede subir la cifra. La tercera y la cuarta se revisaron en una sola pasada, sin volver sobre ningún veredicto: 25 de 25 y 60 de 60. Lo no confirmado son diferencias de presentación entre PDF y XML sin un documento demostrablemente malo.
 
 Cada etapa que marca casos se contrastó con revisión manual del PDF original:
 
@@ -261,8 +304,9 @@ Con eso, el ruido de lectura cayó a la mitad y la ubicación de subtotales subi
 - **2011:** algunas plantillas del primer año NIIF tienen un encabezado que el lector aún no reconoce; esos casos quedan como lectura, no como error.
 - **Solo fondos vigentes** (sesgo de supervivencia) y **solo el último envío** de cada fondo-año (los reenvíos no son observables).
 - **El cruce detecta desacuerdo, no culpa.** Cuál de los dos documentos tiene el error se determina con un tercer punto (el otro documento, el comparativo del año siguiente, el amarre entre estados) y, en las muestras, en revisión manual.
-- **El conteo es por celda, no por causa:** un mismo error que se arrastra a varios años o a varias celdas (un balance comparativo completo mal en el XML, un descuadre por serie que viene del año anterior) cuenta más de una vez. La precisión no cambia, pero el número de errores de origen es menor que 350.
-- **La precisión se midió con 122 casos:** el límite inferior del XML es 84%.
+- **El conteo es por celda:** un error que se arrastra a varias celdas cuenta en cada una; el 04e lo une a su origen (443 errores de origen para 476 casos) cuando la diferencia es la misma. Un arrastre que suma otra diferencia en el camino queda como dos errores.
+- **La precisión se midió con 175 casos:** los límites inferiores por tipo van de 82% (continuidad) a 92% (PDF).
+- **Cuentas cruzadas en el XML:** se cuentan como error porque el XML no dice lo mismo que su propio PDF; una parte puede responder a un cambio de criterio de clasificación de la administradora, que falta medir.
 
 ## Uso responsable
 

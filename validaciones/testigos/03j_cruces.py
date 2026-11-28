@@ -5,7 +5,7 @@
 El emparejador (E7) asigna el codigo por la glosa. Un cruce es una cifra del PDF que NO es la de su cuenta
 en el XML y SI la de otra cuenta del mismo estado y columna (unica, > MIN_MONTO): el PDF la rotula a, el XML
 la tiene en b. Se busca por columna (el monto_de del emparejador exige todos los montos del renglon: un
-cruce solo en el actual no lo veia; 10369/10367 2023). intercambio si b tiene ademas la cifra de a.
+cruce solo en el actual no lo veia). intercambio si b tiene ademas la cifra de a.
 El cruce espejo del 04 compara conjuntos de cifras y no lo ve: las dos cifras estan en los dos documentos.
 
 No son cruces: los montos corridos una linea (monto_desalineado, 03h), los de una linea contra un total
@@ -14,7 +14,7 @@ No son cruces: los montos corridos una linea (monto_desalineado, 03h), los de un
 Cual de los dos cruzo las cuentas lo dicen:
   xml_vecino  el XML del anio vecino (comparativo de t+1 para la columna actual; cierre de t-1 para la
               anterior) trae para a la cifra que el PDF de t le pone: el XML de t es el unico distinto
-              (8610 2019: saldo inicial y final; revision, confirmado)
+              (saldo inicial y final cruzados; revision, confirmado)
   pdf_vecino  el PDF del anio vecino trae para a la cifra del XML de t: el PDF de t es el distinto
   identidad   las reglas del catalogo sobre el XML como esta y con las cuentas como las rotula el PDF
               (a <- cifra de b). Si con la lectura del PDF fallan MENOS, el XML cruzo las cuentas. Que
@@ -24,15 +24,15 @@ Cual de los dos cruzo las cuentas lo dicen:
 lado por celda (fondo, anio, estado, columna): XML (solo votos del XML), PDF (solo del PDF),
 contradictorio; persistente si cada documento es igual a si mismo en el anio vecino (el XML de t+1 como
 el de t, el PDF de t+1 como el de t): la glosa del PDF y la cuenta del XML difieren de forma estable, es
-presentacion (9921: un ingreso impreso bajo "pagados", confirmado; 8338: otros ingresos y gastos) o el
+presentacion (un ingreso impreso bajo "pagados", confirmado; otros ingresos y gastos) o el
 glosario; glosa_contradictoria si la glosa de la cuenta, en t o en el anio vecino que sirve de testigo, dice
 cobro y pago a la vez (03h: "Otros ingresos de operacion pagados", la del modelo CMF): el cruce es efecto
-de la glosa, no se puede decir que documento la cruzo (8160 2017); el resto, sin_testigo. Primero se MIDE; luego el 04c: XML -> error del XML (cuenta cruzada),
+de la glosa, no se puede decir que documento la cruzo; el resto, sin_testigo. Primero se MIDE; luego el 04c: XML -> error del XML (cuenta cruzada),
 PDF y persistente -> presentacion (la glosa del PDF dice otra cuenta), el resto revisar.
 
 Uso:
     python validaciones/testigos/03j_cruces.py                 todo
-    python validaciones/testigos/03j_cruces.py 8872 2011 ...   ademas, el detalle de esos fondo-anio
+    python validaciones/testigos/03j_cruces.py RUT ANIO ...   ademas, el detalle de esos fondo-anio
 
 Lee:      hechos del XML y del PDF (motor/hechos), renglones_pdf.csv (montos corridos), catalogo/fm
 Escribe:  cruces.csv (una fila por cuenta cruzada y columna)

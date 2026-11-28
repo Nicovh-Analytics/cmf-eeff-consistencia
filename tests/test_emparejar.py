@@ -144,7 +144,7 @@ def test_total_activo_corriente_como_unico_total():
 
 
 def test_total_activo_neto_no_es_total_activo():
-    # ESF 10369 2023: "Total activo corriente" es el total; "Total activo neto atribuible" es el activo neto
+    # ESF: "Total activo corriente" es el total; "Total activo neto atribuible" es el activo neto
     voc, canon = _catalogo()
     rs = emparejar([R("Efectivo y efectivo equivalente", 4794.0, 1500.0),
                     R("Activos financieros a valor razonable con efecto en resultados", 382629.0, 0.0),
@@ -157,7 +157,7 @@ def test_total_activo_neto_no_es_total_activo():
 
 
 def test_pagina_repetida_no_toma_cuentas():
-    # 10063 2025: el EFE impreso dos veces (paginas 10 y 11); la segunda no toma cuentas del indirecto
+    # el EFE impreso dos veces (paginas 10 y 11); la segunda no toma cuentas del indirecto
     filas = [("Compra de activos financieros", -138815088.0, -73929674.0),
              ("Intereses, diferencias de cambio y reajustes recibidos", 1629.0, 0.0),
              ("Flujo neto originado por actividades de la operacion", -20024520.0, -29108937.0),
@@ -169,7 +169,7 @@ def test_pagina_repetida_no_toma_cuentas():
 
 
 def test_titulo_con_montos_no_toma_una_linea():
-    # 10329 2023: "Ingresos/(perdidas) de la operacion:" con el monto de los intereses: no se le da otra linea
+    # "Ingresos/(perdidas) de la operacion:" con el monto de los intereses: no se le da otra linea
     voc, canon = _catalogo()
     rs = emparejar([R("Ingresos/(perdidas) de la operacion:", 45211.0, 0.0),
                     R("Cambios netos en valor razonable de activos y pasivos financieros a valor razonable con "
@@ -180,7 +180,7 @@ def test_titulo_con_montos_no_toma_una_linea():
 
 
 def test_monto_de_prefiere_la_cuenta_vecina():
-    # 10383 2023: la glosa del "antes de distribucion" (3 lineas, sin montos) y sus montos en la linea de abajo
+    # la glosa del "antes de distribucion" (3 lineas, sin montos) y sus montos en la linea de abajo
     rs = efe([R("Utilidad (perdida) de la operacion despues de impuesto", 44286.0, 461.0),
               R("Aumento (disminucion) de activo neto atribuible a participes originadas por actividades de la "
                 "operacion antes de distribucion de beneficios", None, None),

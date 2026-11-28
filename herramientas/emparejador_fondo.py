@@ -6,7 +6,7 @@ Imprime, por estado, los renglones con montos cuyo codigo cambia (por concepto) 
 monto_de / glosa_de. Con --todo, todos los renglones del estado.
 
 Uso:
-    PYTHONPATH=. python herramientas/emparejador_fondo.py 8106 2021 [8872 2011 ...] [--estado EFE] [--todo]
+    PYTHONPATH=. python herramientas/emparejador_fondo.py RUT ANIO [RUT ANIO ...] [--estado EFE] [--todo]
 """
 import argparse
 import copy

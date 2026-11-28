@@ -24,8 +24,8 @@ Hallazgos por renglon (formato.csv):
                       como celda vacia SOLO entre una linea y un subtotal/total: entre dos lineas, con una en
                       guion, un monto corrido y dos cuentas cruzadas se ven igual, y eso lo decide el 03j con
                       sus testigos (el guion entre dos lineas convirtio en "PDF" 300 cruces que el 03j daba al
-                      XML, entre ellos 8676 2012 y 8460 2019, confirmados del XML). Tambien en el ECP (total del
-                      fondo, filas vecinas del 03d): 9061 2015, el resultado antes de distribucion (subtotal)
+                      XML, entre ellos dos confirmados del XML). Tambien en el ECP (total del
+                      fondo, filas vecinas del 03d): un ECP con el resultado antes de distribucion (subtotal)
                       con guion y su monto en "Distribucion de beneficios" (linea)
                       -> el 04c cuenta los dos desalineados como error del PDF de UBICACION: la cifra esta
                       bien, pero dos lineas del estado informan un monto que no es el suyo
@@ -201,7 +201,7 @@ def desalineado_columna(r, vx, totales=frozenset()):
                         continue
                     xa, xb = vx.get((rut, anio, est, a.codigo, col)), vx.get((rut, anio, est, b.codigo, col))
                     # un total que el XML trae en 0 con su cifra en una linea es el XML el que la corrio
-                    # (8049 2021: total activo 0 en el XML y el total en otros activos), no el PDF
+                    # (un ESF: total activo 0 en el XML y el total en otros activos), no el PDF
                     if a.codigo in totales and xa == 0:
                         continue
                     if cerca(v, xb) and xa is not None and not cerca(v, xa):

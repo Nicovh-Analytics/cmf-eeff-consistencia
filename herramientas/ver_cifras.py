@@ -3,7 +3,7 @@ Cifras de un fondo-anio y estado, XML y PDF lado a lado (hechos), por columna, c
 emparejador al renglon del PDF. Para revisar a mano un cruce o una diferencia.
 
 Uso:
-    PYTHONPATH=. python herramientas/ver_cifras.py 10369 2023 ESF [Total ActivoNeto ...]
+    PYTHONPATH=. python herramientas/ver_cifras.py RUT ANIO ESF [Total ActivoNeto ...]
     (los textos opcionales filtran codigos que los contengan)
 """
 import sys
